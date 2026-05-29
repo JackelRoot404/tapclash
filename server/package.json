@@ -20,6 +20,10 @@
     "@cloudflare/workers-types": "^4.20250109.0",
     "typescript": "^5.9.2",
     "vitest": "~3.2.0",
-    "wrangler": "^4.20.0"
+    "wrangler": "^4.59.1"
+  },
+  "overrides": {
+    "wrangler": "$wrangler",
+    "ws": "^8.20.1"
   }
 }
