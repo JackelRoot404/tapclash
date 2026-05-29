@@ -1,0 +1,926 @@
+{
+  "address": "CZaaYuo8oNfW7XV8hxwugPw43DVHQQZ8zEoW2A2t2VwV",
+  "metadata": {
+    "name": "tapclash_pools",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "TapClash v2 paid-pool season escrow (entry fees → top-N payout)"
+  },
+  "instructions": [
+    {
+      "name": "claim",
+      "docs": [
+        "A recorded winner withdraws their share. Pays exactly once per Entry."
+      ],
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "entry"
+          ]
+        },
+        {
+          "name": "season",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "_season_id",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "enter",
+      "docs": [
+        "Pay the entry fee and register for the season. One entry per wallet",
+        "(the Entry PDA `init` rejects a second call)."
+      ],
+      "discriminator": [
+        139,
+        49,
+        209,
+        114,
+        88,
+        91,
+        77,
+        134
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "season",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "season_id",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "finalize_season",
+      "docs": [
+        "Freeze the pool and record the winners. The ranked winner Entry accounts",
+        "are passed via `remaining_accounts` in non-increasing `best_score` order,",
+        "rank 1 first. Validates each is a genuine, paid Entry PDA for this season,",
+        "that the order is correct, and that there are no duplicates.",
+        "",
+        "Anti-rug invariant: the winner set must fill EVERY paying rank, i.e.",
+        "`winners.len() == min(entrants, paying_ranks)`. This stops the authority",
+        "from finalizing with too few (or zero) winners so that",
+        "`withdraw_unallocated` could later sweep the players' fees. The authority",
+        "is still trusted to pick the correct top players (scores are off-chain),",
+        "but it cannot withhold the pool from the field."
+      ],
+      "discriminator": [
+        183,
+        221,
+        183,
+        7,
+        73,
+        215,
+        158,
+        50
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "season"
+          ]
+        },
+        {
+          "name": "season",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "season_id",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "init_season",
+      "docs": [
+        "Open a new season. `payout_bps` is the share (basis points) for finishers",
+        "1..=N; it must be non-empty-effective (sum > 0) and sum to at most 10000."
+      ],
+      "discriminator": [
+        179,
+        47,
+        101,
+        197,
+        114,
+        97,
+        174,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "season",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "season_id",
+          "type": "u32"
+        },
+        {
+          "name": "entry_fee",
+          "type": "u64"
+        },
+        {
+          "name": "payout_bps",
+          "type": {
+            "array": [
+              "u16",
+              10
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "submit_score",
+      "docs": [
+        "Oracle-attested best score for a player (monotonic — keeps the max).",
+        "Only the season authority may call this."
+      ],
+      "discriminator": [
+        212,
+        128,
+        45,
+        22,
+        112,
+        82,
+        85,
+        235
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "season"
+          ]
+        },
+        {
+          "name": "season",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              },
+              {
+                "kind": "account",
+                "path": "entry.player",
+                "account": "Entry"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "_season_id",
+          "type": "u32"
+        },
+        {
+          "name": "score",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_unallocated",
+      "docs": [
+        "Authority reclaims the un-payable remainder of a finalized pool: the",
+        "share of ranks with no winner plus rounding dust. This can NEVER touch a",
+        "winner's earmarked funds, because it only moves",
+        "`final_pool - Σ payout_for(final_pool, bps[i])` over filled ranks."
+      ],
+      "discriminator": [
+        226,
+        26,
+        221,
+        64,
+        218,
+        61,
+        68,
+        231
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "season"
+          ]
+        },
+        {
+          "name": "season",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "season_id"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "_season_id",
+          "type": "u32"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Entry",
+      "discriminator": [
+        63,
+        18,
+        152,
+        113,
+        215,
+        246,
+        221,
+        250
+      ]
+    },
+    {
+      "name": "Season",
+      "discriminator": [
+        76,
+        67,
+        93,
+        156,
+        180,
+        157,
+        248,
+        47
+      ]
+    },
+    {
+      "name": "Vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "Claimed",
+      "discriminator": [
+        217,
+        192,
+        123,
+        72,
+        108,
+        150,
+        248,
+        33
+      ]
+    },
+    {
+      "name": "Entered",
+      "discriminator": [
+        247,
+        164,
+        21,
+        222,
+        219,
+        178,
+        237,
+        160
+      ]
+    },
+    {
+      "name": "SeasonFinalized",
+      "discriminator": [
+        17,
+        0,
+        146,
+        8,
+        1,
+        167,
+        147,
+        101
+      ]
+    },
+    {
+      "name": "SeasonOpened",
+      "discriminator": [
+        188,
+        53,
+        161,
+        112,
+        10,
+        91,
+        118,
+        131
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidPayoutSplit",
+      "msg": "payout split must be > 0 and sum to at most 10000 bps"
+    },
+    {
+      "code": 6001,
+      "name": "SeasonFinalized",
+      "msg": "season is already finalized"
+    },
+    {
+      "code": 6002,
+      "name": "AlreadyFinalized",
+      "msg": "season is already finalized"
+    },
+    {
+      "code": 6003,
+      "name": "NotFinalized",
+      "msg": "season is not finalized yet"
+    },
+    {
+      "code": 6004,
+      "name": "NotEntered",
+      "msg": "player has not entered this season"
+    },
+    {
+      "code": 6005,
+      "name": "MathOverflow",
+      "msg": "arithmetic overflow"
+    },
+    {
+      "code": 6006,
+      "name": "SeasonMismatch",
+      "msg": "entry does not belong to this season"
+    },
+    {
+      "code": 6007,
+      "name": "TooManyWinners",
+      "msg": "too many winners (max 10)"
+    },
+    {
+      "code": 6008,
+      "name": "WinnersNotSorted",
+      "msg": "winners must be passed in non-increasing score order"
+    },
+    {
+      "code": 6009,
+      "name": "DuplicateWinner",
+      "msg": "duplicate winner account"
+    },
+    {
+      "code": 6010,
+      "name": "InvalidWinnerAccount",
+      "msg": "invalid winner account"
+    },
+    {
+      "code": 6011,
+      "name": "AlreadyClaimed",
+      "msg": "already claimed"
+    },
+    {
+      "code": 6012,
+      "name": "NotAWinner",
+      "msg": "caller is not a winner of this season"
+    },
+    {
+      "code": 6013,
+      "name": "NothingToClaim",
+      "msg": "nothing to claim for this rank"
+    },
+    {
+      "code": 6014,
+      "name": "InsufficientVault",
+      "msg": "vault has insufficient balance"
+    },
+    {
+      "code": 6015,
+      "name": "AlreadySwept",
+      "msg": "unallocated funds already swept"
+    },
+    {
+      "code": 6016,
+      "name": "Unauthorized",
+      "msg": "only the season authority may perform this action"
+    },
+    {
+      "code": 6017,
+      "name": "IncompleteWinnerSet",
+      "msg": "winner set must fill every paying rank: min(entrants, payout ranks)"
+    }
+  ],
+  "types": [
+    {
+      "name": "Claimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "season_id",
+            "type": "u32"
+          },
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Entered",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "season_id",
+            "type": "u32"
+          },
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Entry",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "season_id",
+            "type": "u32"
+          },
+          {
+            "name": "best_score",
+            "type": "u64"
+          },
+          {
+            "name": "paid",
+            "type": "bool"
+          },
+          {
+            "name": "claimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Season",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "season_id",
+            "type": "u32"
+          },
+          {
+            "name": "entry_fee",
+            "type": "u64"
+          },
+          {
+            "name": "pool_total",
+            "type": "u64"
+          },
+          {
+            "name": "final_pool",
+            "type": "u64"
+          },
+          {
+            "name": "entrants",
+            "type": "u32"
+          },
+          {
+            "name": "num_winners",
+            "type": "u8"
+          },
+          {
+            "name": "finalized",
+            "type": "bool"
+          },
+          {
+            "name": "swept",
+            "type": "bool"
+          },
+          {
+            "name": "payout_bps",
+            "type": {
+              "array": [
+                "u16",
+                10
+              ]
+            }
+          },
+          {
+            "name": "winners",
+            "type": {
+              "array": [
+                "pubkey",
+                10
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SeasonFinalized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "season_id",
+            "type": "u32"
+          },
+          {
+            "name": "num_winners",
+            "type": "u8"
+          },
+          {
+            "name": "final_pool",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SeasonOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "season_id",
+            "type": "u32"
+          },
+          {
+            "name": "entry_fee",
+            "type": "u64"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Vault",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "season_id",
+            "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

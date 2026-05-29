@@ -1,0 +1,29 @@
+[toolchain]
+anchor_version = "0.32.1"
+
+# This Anchor workspace IS the `programs/` dir (Agent B's lane), so the program
+# crate lives at ./tapclash_pools rather than the default ./programs/<name>.
+[workspace]
+members = ["tapclash_pools"]
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+tapclash_pools = "CZaaYuo8oNfW7XV8hxwugPw43DVHQQZ8zEoW2A2t2VwV"
+
+[programs.devnet]
+tapclash_pools = "CZaaYuo8oNfW7XV8hxwugPw43DVHQQZ8zEoW2A2t2VwV"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/devnet-wallet.json"
+
+# Tests run via LiteSVM in ../sdk (fast, no validator). `anchor test` is not the
+# primary test path; build then run `npm test` in ../sdk.
+[scripts]
+test = "echo 'run: cd ../sdk && npm test'"

@@ -1,0 +1,29 @@
+# TapClash leaderboard Worker.
+#
+# Local dev:  npx wrangler dev      (serves on http://localhost:8787 — the same
+#                                     port the old Node stub used, so the app's
+#                                     EXPO_PUBLIC_LEADERBOARD_URL=http://10.0.2.2:8787
+#                                     keeps working against the Android emulator)
+# Tests:      npm test              (vitest + @cloudflare/vitest-pool-workers)
+# Deploy:     npx wrangler deploy   (DO NOT run without user sign-off — see GUARDRAILS)
+
+name = "tapclash-leaderboard"
+main = "src/worker.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[dev]
+port = 8787
+
+[[durable_objects.bindings]]
+name = "LEADERBOARD"
+class_name = "LeaderboardSeason"
+
+# SQLite-backed DO classes must be declared in a migration. SQLite-in-DO is
+# available on the Workers free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["LeaderboardSeason"]
+
+[observability]
+enabled = true
