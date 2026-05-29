@@ -1,0 +1,15 @@
+# Drop screenshots and store icons here before running `npx dapp-store create release`.
+#
+# Required:
+#   icon.png            512x512   PNG, no alpha
+#   banner.png         1920x1080  PNG
+#   screenshot_1.png   1080x1920  PNG (portrait)
+#   screenshot_2.png   1080x1920  PNG
+#   screenshot_3.png   1080x1920  PNG
+#   screenshot_4.png   1080x1920  PNG
+#
+# Capture screenshots on a Seeker (or 1080x1920 emulator) of:
+#   1. Play screen mid-round, several targets visible, high combo
+#   2. End-of-round overlay showing final score + submit banner
+#   3. Leaderboard with your wallet highlighted
+#   4. Season tab showing payout split + countdown

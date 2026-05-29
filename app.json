@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "TapClash",
+    "slug": "tapclash",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "tapclash",
+    "primaryColor": "#14F195",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0a"
+    },
+    "androidStatusBar": {
+      "barStyle": "light-content",
+      "backgroundColor": "#0a0a0a",
+      "translucent": true
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.tapclash.app"
+    },
+    "android": {
+      "package": "com.tapclash.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundColor": "#0a0a0a"
+      },
+      "permissions": [],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-splash-screen",
+      "expo-secure-store"
+    ]
+  }
+}

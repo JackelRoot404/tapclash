@@ -1,0 +1,72 @@
+# Solana Mobile dApp Store publishing config.
+# Used by @solana-mobile/dapp-store-cli (npx dapp-store).
+# Docs: https://docs.solanamobile.com/dapp-publishing/intro
+
+publisher:
+  name: TapClash Labs
+  website: https://tapclash.app
+  email: twigzzz28@gmail.com
+  address: Remote, US
+
+app:
+  android_package: com.tapclash.app
+  name: TapClash
+  urls:
+    license_url: https://github.com/twigzzz28/tapclash/blob/main/LICENSE
+    copyright_url: https://tapclash.app/copyright
+    privacy_policy_url: https://tapclash.app/privacy
+    website: https://tapclash.app
+  google_store_package: null
+
+release:
+  # Bumped automatically by `npx dapp-store create release`; track in git.
+  address: null
+  media:
+    - purpose: icon
+      uri: ./media/icon.png
+    - purpose: banner
+      uri: ./media/banner.png
+    - purpose: screenshot
+      uri: ./media/screenshot_1.png
+    - purpose: screenshot
+      uri: ./media/screenshot_2.png
+    - purpose: screenshot
+      uri: ./media/screenshot_3.png
+    - purpose: screenshot
+      uri: ./media/screenshot_4.png
+  files:
+    - purpose: install
+      uri: ../android/app/build/outputs/bundle/release/app-release.aab
+  catalog:
+    en-US:
+      name: TapClash
+      short_description: 30-second tap battles. Climb the monthly Solana season leaderboard.
+      long_description: |
+        Tap fast. Stay accurate. Win the season.
+
+        TapClash is a 30-second reaction-speed game built for Solana Seeker.
+        Targets pop up on screen — tap them before they vanish. Hit early for
+        bonus points, chain them for combos, and aim for perfect accuracy.
+
+        Every score is signed by your Seed Vault wallet and posted to a global
+        monthly leaderboard. Top finishers earn season-end ranks. Paid prize
+        pools land in v2.
+
+        - 30-second rounds you can play in line for coffee
+        - Tight, scoring-driven gameplay: combos, perfects, accuracy multipliers
+        - Monthly seasons reset on the 1st, UTC — fresh start every month
+        - Your wallet, your scores — no email, no account
+        - Built natively for Solana Seeker and the Seed Vault
+      new_in_version: Initial release.
+      saga_features: |
+        TapClash uses the Solana Seed Vault for wallet authentication and
+        score signing. No private keys ever leave your device.
+      tagline: Tap fast. Stay accurate. Win the season.
+  solana_mobile_dapp_publisher_portal:
+    google_store_package: null
+    testing_instructions: |
+      1. Launch TapClash and tap "Start round" on the Play tab.
+      2. Tap as many targets as you can in 30 seconds.
+      3. When the round ends, choose "Connect wallet to submit" — sign the
+         message in your Seed Vault.
+      4. Confirm your score appears on the Ranks tab with your wallet shortened.
