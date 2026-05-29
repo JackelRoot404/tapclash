@@ -10,6 +10,8 @@ export type LeaderboardEntry = {
 export type SubmitPayload = {
   wallet: string;
   seasonId: number;
+  // v2: the leaderboard category (game-mode slug). Omitted ⇒ v1 ⇒ "classic" bucket.
+  category?: string;
   score: number;
   hits: number;
   misses: number;
@@ -22,24 +24,37 @@ export type SubmitPayload = {
 
 // Canonical message format used for signing. The backend recomputes the same
 // string from the submitted fields and verifies the signature against the wallet.
+// v2 (with `category`) binds the category into the signature so a score signed
+// for one mode can't be replayed into another; v1 (no category) is unchanged and
+// stays valid forever (legacy + the "classic" bucket).
 export function buildScoreMessage(p: {
   wallet: string;
   seasonId: number;
+  category?: string;
   score: number;
   hits: number;
   misses: number;
   durationMs: number;
   nonce: string;
 }): Uint8Array {
-  const canonical =
-    `tapclash/v1\n` +
-    `wallet=${p.wallet}\n` +
-    `season=${p.seasonId}\n` +
-    `score=${p.score}\n` +
-    `hits=${p.hits}\n` +
-    `misses=${p.misses}\n` +
-    `dur=${p.durationMs}\n` +
-    `nonce=${p.nonce}`;
+  const canonical = p.category
+    ? `tapclash/v2\n` +
+      `wallet=${p.wallet}\n` +
+      `season=${p.seasonId}\n` +
+      `category=${p.category}\n` +
+      `score=${p.score}\n` +
+      `hits=${p.hits}\n` +
+      `misses=${p.misses}\n` +
+      `dur=${p.durationMs}\n` +
+      `nonce=${p.nonce}`
+    : `tapclash/v1\n` +
+      `wallet=${p.wallet}\n` +
+      `season=${p.seasonId}\n` +
+      `score=${p.score}\n` +
+      `hits=${p.hits}\n` +
+      `misses=${p.misses}\n` +
+      `dur=${p.durationMs}\n` +
+      `nonce=${p.nonce}`;
   return new TextEncoder().encode(canonical);
 }
 
@@ -97,10 +112,12 @@ export async function submitScore(payload: SubmitPayload): Promise<SubmitRespons
 
 // Returns null on failure (offline / backend unreachable) so callers can tell a
 // genuinely empty season from a network error. An empty array means "no scores".
-export async function fetchLeaderboard(seasonId: number): Promise<LeaderboardEntry[] | null> {
+export async function fetchLeaderboard(seasonId: number, category?: string): Promise<LeaderboardEntry[] | null> {
   if (!LEADERBOARD_URL) return null;
+  // v2 routes to the per-category board; omit ⇒ legacy "classic" board (v1 route).
+  const path = category ? `/leaderboard/${seasonId}/${category}` : `/leaderboard/${seasonId}`;
   try {
-    const res = await fetchWithTimeout(`${LEADERBOARD_URL}/leaderboard/${seasonId}`);
+    const res = await fetchWithTimeout(`${LEADERBOARD_URL}${path}`);
     if (!res.ok) return null;
     const body = await res.json();
     return body.entries ?? [];
@@ -112,11 +129,13 @@ export async function fetchLeaderboard(seasonId: number): Promise<LeaderboardEnt
 
 export async function fetchPlayerStats(
   seasonId: number,
-  wallet: string
+  wallet: string,
+  category?: string
 ): Promise<{ bestScore: number; rank: number | null; rounds: number } | null> {
   if (!LEADERBOARD_URL) return null;
+  const path = category ? `/players/${seasonId}/${category}/${wallet}` : `/players/${seasonId}/${wallet}`;
   try {
-    const res = await fetchWithTimeout(`${LEADERBOARD_URL}/players/${seasonId}/${wallet}`);
+    const res = await fetchWithTimeout(`${LEADERBOARD_URL}${path}`);
     if (!res.ok) return null;
     return await res.json();
   } catch (e) {

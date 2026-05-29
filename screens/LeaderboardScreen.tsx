@@ -1,15 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/config';
 import { useSeason } from '../context/SeasonContext';
 import { useWallet } from '../context/WalletContext';
 import { fetchLeaderboard, LeaderboardEntry } from '../services/leaderboard';
+import { CATEGORIES, DEFAULT_CATEGORY, type CategorySlug } from '../constants/categories';
 import { formatCountdown } from '../utils/season';
 
 export default function LeaderboardScreen() {
   const { season, msRemaining } = useSeason();
   const { publicKey } = useWallet();
+  const [category, setCategory] = useState<CategorySlug>(DEFAULT_CATEGORY);
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -18,7 +20,7 @@ export default function LeaderboardScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const data = await fetchLeaderboard(season.id);
+    const data = await fetchLeaderboard(season.id, category);
     if (data === null) {
       // Network / backend failure — keep any entries we already have.
       setFailed(true);
@@ -28,17 +30,38 @@ export default function LeaderboardScreen() {
     }
     setLoading(false);
     setLoaded(true);
-  }, [season.id]);
+  }, [season.id, category]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const selectCategory = (slug: CategorySlug) => {
+    if (slug === category) return;
+    // Clear so we show the spinner for the new board, not the old one's rows.
+    setEntries([]);
+    setLoaded(false);
+    setCategory(slug);
+  };
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>Leaderboard</Text>
         <Text style={styles.subtitle}>{season.label} · ends in {formatCountdown(msRemaining)}</Text>
+      </View>
+
+      <View style={styles.tabsWrap}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
+          {CATEGORIES.map((c) => {
+            const active = c.slug === category;
+            return (
+              <Pressable key={c.slug} onPress={() => selectCategory(c.slug)} style={[styles.tab, active && styles.tabActive]}>
+                <Text style={[styles.tabText, active && styles.tabTextActive]}>{c.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {!loaded && loading && entries.length === 0 ? (
@@ -99,6 +122,19 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   title: { color: COLORS.text, fontSize: 24, fontWeight: '800' },
   subtitle: { color: COLORS.textDim, fontSize: 12, marginTop: 4 },
+  tabsWrap: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  tabs: { paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  tab: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bgElev,
+  },
+  tabActive: { borderColor: COLORS.accent, backgroundColor: 'rgba(20, 241, 149, 0.14)' },
+  tabText: { color: COLORS.textDim, fontSize: 13, fontWeight: '700' },
+  tabTextActive: { color: COLORS.accent },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -756,3 +756,53 @@ anything you need from my lane.
   accepts them as-is** — no `server/` change, no redeploy, no SP1-style handoff,
   frozen contract untouched (SP3 intact). Spec parked; I build v2 only on a future
   SP3 go. Carry on with the in-app feature. 👍
+- **[A→B] 2026-05-29 — 🔏✅ SP3 SIGNED — tapclash/v2 category message APPROVED.**
+  User greenlit the per-mode-leaderboards follow-up, which authorizes this. I sign
+  off on the `tapclash/v2` signing message exactly as specced in
+  `server/docs/CATEGORIES_SPEC.md §3`:
+  ```
+  tapclash/v2
+  wallet=<base58>
+  season=<YYYYMM int>
+  category=<slug>        ← NEW, right after season
+  score=<int>
+  hits=<int>
+  misses=<int>
+  dur=30000
+  nonce=<hex>
+  ```
+  Rules unchanged otherwise (Ed25519 detached, no trailing newline, base64 64-byte
+  sig, this exact field order). **v2 iff the request body carries `category`;**
+  absent ⇒ v1 ⇒ bucket `classic`. v1 stays valid forever; shipped AAB unaffected.
+  Slug regex `^[a-z0-9_-]{1,32}$`. Reserved `classic` = default/legacy bucket.
+  **🟢 GO build the server side** (v2 parse/validate + `bad_category`, composite DO
+  name `${season}:${category}`, new GET `/leaderboard/:season/:category` &
+  `/players/:season/:category/:wallet`, keep v1 routes, optional
+  `GET /categories/:season`, extend tests). Please **deploy to the prod Worker**
+  when green and post `SP4: server v2 live` here so I can E2E from the app.
+  **Launch category list (your Q2):** the 4 modes, slug = mode key →
+  `classic`, `frenzy`, `precision`, `sudden` (display names Classic / Frenzy /
+  Precision / Sudden Death). All confirmed within the 30s/0–50000 envelope, so §6
+  ships as-is (no per-category validation params).
+  I'm building the app side in parallel against this spec now.
+- **[A] 2026-05-29 — 📲 APP SIDE for per-mode boards BUILT + COMMITTED (E2E pending).**
+  v2 category wiring done + type-clean + committed on my lane:
+  - `constants/categories.ts` (category = mode: classic/frenzy/precision/sudden;
+    slug = mode key; DEFAULT_CATEGORY=classic; categoryForMode/labelForCategory).
+  - `services/leaderboard.ts`: `buildScoreMessage` emits the **tapclash/v2** string
+    (category= line after season) when category is present, else v1 verbatim;
+    `submitScore` payload + `fetchLeaderboard(season, category?)` +
+    `fetchPlayerStats(season, wallet, category?)` route to the `/:category` paths.
+  - `useSubmitScore`: threads category into sign+submit+retry-queue.
+  - `PlayScreen`: submits with `categoryForMode(game.state.mode)` (bucket = mode played).
+  - `LeaderboardScreen` (Ranks): per-category tabs (Classic/Frenzy/Precision/Sudden
+    Death), category-scoped fetch. `ProfileScreen`: rank reflects the player's
+    persisted mode category (focus-refresh).
+  - On-device UI verified: tabs render + switch; the Classic tab now hits the v2
+    route `/leaderboard/:season/classic` → currently 404s ("Couldn't reach") until
+    your server v2 lands — expected pre-deploy.
+  **BLOCKED on you:** post `SP4: server v2 live` once deployed (saw your server/
+  files in progress — nice). **Also note: the user unplugged the Seeker, so the
+  E2E pass is paused** until the device is back; everything's committed + ready to
+  resume. My v2 signing string matches `CATEGORIES_SPEC §3` byte-for-byte (field
+  order wallet/season/category/score/hits/misses/dur/nonce, no trailing newline).

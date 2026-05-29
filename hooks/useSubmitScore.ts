@@ -7,6 +7,8 @@ import { queuePendingScore, flushPendingScores } from '../services/pendingScores
 
 export type SubmitInput = {
   seasonId: number;
+  // v2 leaderboard category (game-mode slug). Bound into the signature + bucket.
+  category?: string;
   score: number;
   hits: number;
   misses: number;
@@ -56,6 +58,7 @@ export function useSubmitScore() {
       const message = buildScoreMessage({
         wallet,
         seasonId: input.seasonId,
+        category: input.category,
         score: input.score,
         hits: input.hits,
         misses: input.misses,
@@ -74,6 +77,7 @@ export function useSubmitScore() {
       const payload = {
         wallet,
         seasonId: input.seasonId,
+        category: input.category,
         score: input.score,
         hits: input.hits,
         misses: input.misses,

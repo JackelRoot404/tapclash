@@ -18,6 +18,7 @@ import { usePoolSeason } from '../hooks/usePoolSeason';
 import { isOpenForEntry } from '../sdk/src';
 import { lamportsToSol } from '../services/pools';
 import { ROUND_MS, MODES, MODE_ORDER, TARGET_KINDS, type GameMode, type TargetKind } from '../constants/game';
+import { categoryForMode } from '../constants/categories';
 
 const MODE_KEY = 'tapclash:mode';
 
@@ -73,6 +74,7 @@ export default function PlayScreen() {
     return submit.submit(
       {
         seasonId: season.id,
+        category: categoryForMode(game.state.mode),
         score: finalScore(game.state),
         hits: game.state.hits,
         misses: game.state.misses,

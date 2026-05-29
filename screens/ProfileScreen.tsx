@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from '../constants/config';
 import { Button } from '../components/Button';
 import { useWallet } from '../context/WalletContext';
@@ -10,12 +12,15 @@ import { fetchPlayerStats } from '../services/leaderboard';
 import { usePoolSeason } from '../hooks/usePoolSeason';
 import { claimableLamports } from '../sdk/src';
 import { lamportsToSol } from '../services/pools';
+import { DEFAULT_CATEGORY, labelForCategory, type CategorySlug } from '../constants/categories';
+import { MODE_ORDER } from '../constants/game';
 
 export default function ProfileScreen() {
   const { publicKey, connected, connecting, connect, disconnect, error: walletError } = useWallet();
   const { season } = useSeason();
   const [local, setLocal] = useState<LocalStats | null>(null);
   const [serverRank, setServerRank] = useState<number | null>(null);
+  const [category, setCategory] = useState<CategorySlug>(DEFAULT_CATEGORY);
   const { poolSeason, entry, busy: poolBusy, claim } = usePoolSeason();
   const owed = poolSeason && entry ? claimableLamports(poolSeason, entry) : 0n;
 
@@ -23,15 +28,28 @@ export default function ProfileScreen() {
     getLocalStats().then(setLocal);
   }, []);
 
-  useEffect(() => {
-    // Clear any rank from a previous wallet/season before (and instead of)
-    // fetching, so a disconnected or unranked player never shows a stale '#N'.
-    setServerRank(null);
-    if (!publicKey) return;
-    fetchPlayerStats(season.id, publicKey.toBase58()).then((s) => {
-      setServerRank(s?.rank ?? null);
-    });
-  }, [publicKey, season.id]);
+  // On focus, read the player's current mode (persisted by Play) and fetch their
+  // rank in THAT mode's leaderboard category — so the rank tracks how they play,
+  // and refreshes when they switch modes and return here. Clearing first means a
+  // disconnected/unranked player never shows a stale '#N'.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      setServerRank(null);
+      (async () => {
+        const m = await AsyncStorage.getItem('tapclash:mode').catch(() => null);
+        const cat = (m && (MODE_ORDER as string[]).includes(m) ? m : DEFAULT_CATEGORY) as CategorySlug;
+        if (cancelled) return;
+        setCategory(cat);
+        if (!publicKey) return;
+        const s = await fetchPlayerStats(season.id, publicKey.toBase58(), cat);
+        if (!cancelled) setServerRank(s?.rank ?? null);
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [publicKey, season.id])
+  );
 
   const addr = publicKey?.toBase58() ?? null;
   const accuracy =
@@ -83,7 +101,7 @@ export default function ProfileScreen() {
           <Text style={styles.label}>THIS SEASON</Text>
           <View style={styles.statRow}>
             <Stat title="Best score" value={local && local.lastSeasonId === season.id ? local.bestScore.toString() : '0'} />
-            <Stat title="Season rank" value={serverRank ? `#${serverRank}` : '—'} />
+            <Stat title={`Rank · ${labelForCategory(category)}`} value={serverRank ? `#${serverRank}` : '—'} />
           </View>
         </View>
 
