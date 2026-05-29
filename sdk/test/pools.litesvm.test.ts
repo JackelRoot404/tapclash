@@ -24,6 +24,10 @@ import {
   decodeVault,
   payoutFor,
   DEFAULT_PAYOUT_BPS,
+  winnerRank,
+  claimableLamports,
+  hasPendingClaim,
+  isOpenForEntry,
 } from '../src/index';
 
 const SO_PATH = resolve(
@@ -354,5 +358,44 @@ describe('tapclash_pools — audit hardening (anti-rug)', () => {
     const ghost = Keypair.generate();
     // Entry PDA does not exist → account validation fails before the body runs.
     expect(send(svm, submitScoreIx({ authority: authority.publicKey, seasonId, player: ghost.publicKey, score: 999n }), [authority]).ok).toBe(false);
+  });
+});
+
+describe('SDK claim/read helpers (decoded state)', () => {
+  it('winnerRank / claimableLamports / hasPendingClaim track on-chain state', () => {
+    const svm = freshSvm();
+    const seasonId = 26;
+    const authority = fund(svm);
+    const payout = [6000, 4000];
+    send(svm, initSeasonIx({ authority: authority.publicKey, seasonId, entryFee: FEE, payoutBps: payout }), [authority]);
+
+    const winner = fund(svm), runnerUp = fund(svm);
+    send(svm, enterIx({ player: winner.publicKey, seasonId }), [winner]);
+    send(svm, enterIx({ player: runnerUp.publicKey, seasonId }), [runnerUp]);
+
+    // Before finalize: open for entry, nothing claimable.
+    let season = seasonState(svm, seasonId);
+    expect(isOpenForEntry(season)).toBe(true);
+    expect(claimableLamports(season, entryState(svm, seasonId, winner.publicKey))).toBe(0n);
+
+    send(svm, submitScoreIx({ authority: authority.publicKey, seasonId, player: winner.publicKey, score: 900n }), [authority]);
+    send(svm, submitScoreIx({ authority: authority.publicKey, seasonId, player: runnerUp.publicKey, score: 100n }), [authority]);
+    send(svm, finalizeSeasonIx({ authority: authority.publicKey, seasonId, winners: [winner.publicKey, runnerUp.publicKey] }), [authority]);
+
+    season = seasonState(svm, seasonId);
+    const pool = FEE * 2n;
+    expect(isOpenForEntry(season)).toBe(false);
+    expect(winnerRank(season, winner.publicKey)).toBe(0);
+    expect(winnerRank(season, runnerUp.publicKey)).toBe(1);
+    expect(winnerRank(season, Keypair.generate().publicKey)).toBeNull();
+
+    const wEntry = entryState(svm, seasonId, winner.publicKey);
+    expect(claimableLamports(season, wEntry)).toBe(payoutFor(pool, 6000));
+    expect(hasPendingClaim(season, wEntry)).toBe(true);
+
+    // After claiming, the helper reports 0 (entry.claimed flips).
+    expect(send(svm, claimIx({ player: winner.publicKey, seasonId }), [winner]).ok).toBe(true);
+    expect(claimableLamports(season, entryState(svm, seasonId, winner.publicKey))).toBe(0n);
+    expect(hasPendingClaim(season, entryState(svm, seasonId, winner.publicKey))).toBe(false);
   });
 });

@@ -45,6 +45,8 @@ export {
 
 export { decodeSeason, decodeEntry, decodeVault } from './accounts';
 
+export { isOpenForEntry, winnerRank, claimableLamports, hasPendingClaim } from './claim';
+
 export {
   MAX_WINNERS,
   BPS_DENOMINATOR,
