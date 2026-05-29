@@ -12,6 +12,11 @@ main = "src/worker.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+# v2 per-mode leaderboard category allowlist (SP3-approved). Bounds DO creation;
+# must stay in sync with the app's constants/categories.ts. `classic` = default.
+[vars]
+TAPCLASH_CATEGORIES = "classic,frenzy,precision,sudden"
+
 [dev]
 port = 8787
 

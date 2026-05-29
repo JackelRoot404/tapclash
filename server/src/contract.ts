@@ -60,6 +60,45 @@ export function rebuildMessage(p: {
   );
 }
 
+export const CATEGORY_RE = /^[a-z0-9_-]{1,32}$/;
+
+// Default category allowlist (launch modes). Overridable via the Worker's
+// TAPCLASH_CATEGORIES env var. `classic` is the canonical default mode and is
+// storage-identical to the v1 leaderboard (see worker doName()).
+export const DEFAULT_CATEGORIES: ReadonlySet<string> = new Set([
+  'classic',
+  'frenzy',
+  'precision',
+  'sudden',
+]);
+
+// v2 canonical message — v1 plus a `category=` line after `season=`. Used when a
+// submission carries a category (per-mode leaderboards). SP3-approved 2026-05-29;
+// see server/docs/CATEGORIES_SPEC.md. The category MUST be in the signed bytes so
+// a score signed for one mode cannot be replayed into another.
+export function rebuildMessageV2(p: {
+  wallet: string;
+  seasonId: number | string;
+  category: string;
+  score: number | string;
+  hits: number | string;
+  misses: number | string;
+  durationMs: number | string;
+  nonce: string;
+}): string {
+  return (
+    `tapclash/v2\n` +
+    `wallet=${p.wallet}\n` +
+    `season=${p.seasonId}\n` +
+    `category=${p.category}\n` +
+    `score=${p.score}\n` +
+    `hits=${p.hits}\n` +
+    `misses=${p.misses}\n` +
+    `dur=${p.durationMs}\n` +
+    `nonce=${p.nonce}`
+  );
+}
+
 // Replicates `new PublicKey(wallet).toBytes()`: the web3.js v1 string
 // constructor base58-decodes and throws unless the result is EXACTLY 32 bytes
 // (it does not left-pad short inputs — that path only exists for the BN/number
@@ -82,11 +121,28 @@ export type ValidationError =
 export function validateSubmission(
   body: Record<string, unknown>,
   b64decode: (s: string) => Uint8Array,
+  allowedCategories: ReadonlySet<string> = DEFAULT_CATEGORIES,
 ): ValidationError | null {
   for (const k of REQUIRED_FIELDS) {
     if (body[k] === undefined || body[k] === null) {
       return { error: `missing_${k}`, status: 400 };
     }
+  }
+
+  // v2: a category, if present, must be an allowlisted slug. Absent ⇒ v1/classic.
+  // Reject empty/whitespace/non-string/unknown explicitly (never silent v1
+  // fall-through). `category` IS bound in the v2 signed message below.
+  if ('category' in body && body.category !== undefined) {
+    const c = body.category;
+    if (typeof c !== 'string' || !CATEGORY_RE.test(c) || !allowedCategories.has(c)) {
+      return { error: 'bad_category', status: 400 };
+    }
+  }
+
+  // seasonId must be a clean non-negative integer so the per-(season,category) DO
+  // name stays unambiguous (no separator injection).
+  if (!Number.isInteger(body.seasonId) || (body.seasonId as number) < 0) {
+    return { error: 'bad_season', status: 400 };
   }
 
   const durationMs = body.durationMs as number;
@@ -106,8 +162,11 @@ export function validateSubmission(
     return { error: 'bad_wallet', status: 400 };
   }
 
+  // v2 iff a (validated) category string is present; else byte-identical v1.
   const msg = new TextEncoder().encode(
-    rebuildMessage(body as Parameters<typeof rebuildMessage>[0]),
+    typeof body.category === 'string'
+      ? rebuildMessageV2(body as Parameters<typeof rebuildMessageV2>[0])
+      : rebuildMessage(body as Parameters<typeof rebuildMessage>[0]),
   );
 
   let sig: Uint8Array;

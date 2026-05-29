@@ -2,7 +2,7 @@ import { SELF } from 'cloudflare:test';
 import { describe, it, expect } from 'vitest';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { rebuildMessage, ROUND_MS } from '../src/contract';
+import { rebuildMessage, rebuildMessageV2, ROUND_MS } from '../src/contract';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -356,5 +356,116 @@ describe('CORS and routing', () => {
   it('GET endpoints carry CORS headers', async () => {
     const res = await getLeaderboard(300099);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2 per-mode categories (SP3-approved) — server/docs/CATEGORIES_SPEC.md §12
+// ---------------------------------------------------------------------------
+
+function signedV2(category: string, over: Partial<Fields> & { seasonId?: number } = {}) {
+  const kp = nacl.sign.keyPair();
+  const wallet = over.wallet ?? bs58.encode(kp.publicKey);
+  const fields: Fields = {
+    wallet, seasonId: 202610, score: 1000, hits: 10, misses: 2,
+    durationMs: ROUND_MS, nonce: freshNonce(), ...over,
+  };
+  const msg = new TextEncoder().encode(rebuildMessageV2({ ...fields, category }));
+  const sig = nacl.sign.detached(msg, kp.secretKey);
+  const body: Record<string, unknown> = {
+    ...fields, category,
+    accuracy: fields.hits / Math.max(1, fields.hits + fields.misses),
+    signature: Buffer.from(sig).toString('base64'),
+  };
+  return { kp, wallet, body };
+}
+const getLbCat = (s: number, c: string) => SELF.fetch(`${BASE}/leaderboard/${s}/${c}`);
+
+describe('v2 categories', () => {
+  it('accepts a v2 signed score for each launch category', async () => {
+    for (const cat of ['classic', 'frenzy', 'precision', 'sudden']) {
+      const { body } = signedV2(cat, { seasonId: 500001, score: 1234 });
+      const res = await postScore(body);
+      expect(res.status, cat).toBe(200);
+      expect((await res.json() as { ok: boolean }).ok).toBe(true);
+    }
+  });
+
+  it('binds the category in the signature — cross-category replay → 401', async () => {
+    const { body } = signedV2('frenzy', { seasonId: 500002, score: 900 });
+    expect((await postScore(body)).status).toBe(200);
+    const res = await postScore({ ...body, category: 'precision' }); // tamper category
+    expect(res.status).toBe(401);
+    expect((await res.json() as { error: string }).error).toBe('signature_invalid');
+    const { entries } = await (await getLbCat(500002, 'precision')).json() as { entries: unknown[] };
+    expect(entries).toHaveLength(0); // never reached the precision board
+  });
+
+  it('unifies v1 and v2-classic into the same board (no fork)', async () => {
+    const s = 500003;
+    const v1 = signed({ seasonId: s, score: 100 });             // no category → classic
+    const v2 = signedV2('classic', { seasonId: s, score: 200 }); // explicit classic
+    expect((await postScore(v1.body)).status).toBe(200);
+    expect((await postScore(v2.body)).status).toBe(200);
+    const sorted = (es: { wallet: string }[]) => es.map((e) => e.wallet).sort();
+    const viaV1 = (await (await getLeaderboard(s)).json() as { entries: { wallet: string }[] }).entries;
+    const viaV2 = (await (await getLbCat(s, 'classic')).json() as { entries: { wallet: string }[] }).entries;
+    expect(sorted(viaV1)).toEqual([v1.wallet, v2.wallet].sort());
+    expect(sorted(viaV2)).toEqual(sorted(viaV1)); // same DO, same board
+  });
+
+  it('rejects empty / mixed-case / illegal / unknown category → 400 bad_category', async () => {
+    for (const cat of ['', 'Classic', 'x:y', 'unknown', 'a'.repeat(33)]) {
+      const { body } = signedV2('frenzy', { seasonId: 500004 });
+      (body as Record<string, unknown>).category = cat; // bad_category fires before sig check
+      const res = await postScore(body);
+      expect(res.status, JSON.stringify(cat)).toBe(400);
+      expect((await res.json() as { error: string }).error, JSON.stringify(cat)).toBe('bad_category');
+    }
+  });
+
+  it('rejects non-integer / negative seasonId → 400 bad_season', async () => {
+    for (const s of [202605.5, -1]) {
+      const { body } = signedV2('frenzy', { seasonId: s });
+      const res = await postScore(body);
+      expect(res.status).toBe(400);
+      expect((await res.json() as { error: string }).error).toBe('bad_season');
+    }
+  });
+
+  it('isolates buckets: same wallet+nonce across categories OK; same (category,nonce) replays', async () => {
+    const s = 500005;
+    const kp = nacl.sign.keyPair();
+    const wallet = bs58.encode(kp.publicKey);
+    const nonce = 'shared-cat-nonce';
+    const mk = (category: string) => {
+      const f = { wallet, seasonId: s, score: 700, hits: 7, misses: 1, durationMs: ROUND_MS, nonce };
+      const sig = nacl.sign.detached(new TextEncoder().encode(rebuildMessageV2({ ...f, category })), kp.secretKey);
+      return { ...f, category, accuracy: 0.8, signature: Buffer.from(sig).toString('base64') };
+    };
+    expect((await postScore(mk('frenzy'))).status).toBe(200);
+    expect((await postScore(mk('precision'))).status).toBe(200); // diff category, same nonce → OK
+    const replay = await postScore(mk('frenzy'));
+    expect(replay.status).toBe(409);
+    expect((await replay.json() as { error: string }).error).toBe('nonce_used');
+  });
+
+  it('GET v2 leaderboard with a non-allowlisted category → 400 bad_category', async () => {
+    const res = await getLbCat(500006, 'bogus');
+    expect(res.status).toBe(400);
+    expect((await res.json() as { error: string }).error).toBe('bad_category');
+  });
+
+  it('ranks within a non-classic bucket', async () => {
+    const s = 500007;
+    const lo = signedV2('frenzy', { seasonId: s, score: 100 });
+    const hi = signedV2('frenzy', { seasonId: s, score: 9000 });
+    await postScore(lo.body);
+    await postScore(hi.body);
+    const { entries } = await (await getLbCat(s, 'frenzy')).json() as {
+      entries: { rank: number; wallet: string; score: number }[];
+    };
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({ rank: 1, wallet: hi.wallet, score: 9000 });
   });
 });

@@ -6,12 +6,14 @@
 // used to live in server/index.js, preserving its HTTP API byte-for-byte.
 
 import { LeaderboardSeason, type SubmitResult } from './leaderboard-do';
-import { rebuildMessage, validateSubmission } from './contract';
+import { rebuildMessage, validateSubmission, DEFAULT_CATEGORIES } from './contract';
 
 export { LeaderboardSeason };
 
 export interface Env {
   LEADERBOARD: DurableObjectNamespace<LeaderboardSeason>;
+  // Comma-separated category allowlist; defaults to DEFAULT_CATEGORIES.
+  TAPCLASH_CATEGORIES?: string;
 }
 
 const CORS_HEADERS: Record<string, string> = {
@@ -33,8 +35,23 @@ function base64ToBytes(b64: string): Uint8Array {
   return new Uint8Array(Buffer.from(b64, 'base64'));
 }
 
-function seasonStub(env: Env, seasonId: string): DurableObjectStub<LeaderboardSeason> {
-  return env.LEADERBOARD.get(env.LEADERBOARD.idFromName(seasonId));
+// `classic` (and v1, no-category) routes to the BARE seasonId DO — the same
+// instance the shipped v1 app already populates — so classic data is never
+// forked. Non-classic categories get their own `${seasonId}:${category}` DO.
+function doName(seasonId: string, category: string): string {
+  return category === 'classic' ? seasonId : `${seasonId}:${category}`;
+}
+
+function bucketStub(env: Env, seasonId: string, category: string): DurableObjectStub<LeaderboardSeason> {
+  return env.LEADERBOARD.get(env.LEADERBOARD.idFromName(doName(seasonId, category)));
+}
+
+function allowedCategories(env: Env): ReadonlySet<string> {
+  const raw = env.TAPCLASH_CATEGORIES;
+  if (typeof raw === 'string' && raw.trim()) {
+    return new Set(raw.split(',').map((s) => s.trim()).filter(Boolean));
+  }
+  return DEFAULT_CATEGORIES;
 }
 
 export default {
@@ -48,26 +65,40 @@ export default {
 
     // Health banner — outside the frozen API; lets the operator eyeball a deploy.
     if (req.method === 'GET' && (pathname === '/' || pathname === '/health')) {
-      return json(200, { ok: true, service: 'tapclash-leaderboard', version: 1 });
+      return json(200, { ok: true, service: 'tapclash-leaderboard', version: 2 });
     }
 
-    // POST /scores
+    // POST /scores  (v1 classic + v2 per-category)
     if (req.method === 'POST' && pathname === '/scores') {
       return handleSubmit(req, env);
     }
 
-    // GET /leaderboard/:seasonId
-    const lb = pathname.match(/^\/leaderboard\/(\d+)$/);
-    if (req.method === 'GET' && lb) {
-      const { entries } = await seasonStub(env, lb[1]).leaderboard();
+    // GET /leaderboard/:seasonId/:category  (v2)
+    const lb2 = pathname.match(/^\/leaderboard\/(\d+)\/([a-z0-9_-]{1,32})$/);
+    if (req.method === 'GET' && lb2) {
+      if (!allowedCategories(env).has(lb2[2])) return json(400, { error: 'bad_category' });
+      const { entries } = await bucketStub(env, lb2[1], lb2[2]).leaderboard();
       return json(200, { entries });
     }
 
-    // GET /players/:seasonId/:wallet
+    // GET /leaderboard/:seasonId  (v1 → classic, unchanged)
+    const lb = pathname.match(/^\/leaderboard\/(\d+)$/);
+    if (req.method === 'GET' && lb) {
+      const { entries } = await bucketStub(env, lb[1], 'classic').leaderboard();
+      return json(200, { entries });
+    }
+
+    // GET /players/:seasonId/:category/:wallet  (v2)
+    const pl2 = pathname.match(/^\/players\/(\d+)\/([a-z0-9_-]{1,32})\/([A-Za-z0-9]+)$/);
+    if (req.method === 'GET' && pl2) {
+      if (!allowedCategories(env).has(pl2[2])) return json(400, { error: 'bad_category' });
+      return json(200, await bucketStub(env, pl2[1], pl2[2]).player(pl2[3]));
+    }
+
+    // GET /players/:seasonId/:wallet  (v1 → classic, unchanged)
     const pl = pathname.match(/^\/players\/(\d+)\/([A-Za-z0-9]+)$/);
     if (req.method === 'GET' && pl) {
-      const result = await seasonStub(env, pl[1]).player(pl[2]);
-      return json(200, result);
+      return json(200, await bucketStub(env, pl[1], 'classic').player(pl[2]));
     }
 
     return json(404, { error: 'not_found' });
@@ -84,11 +115,13 @@ async function handleSubmit(req: Request, env: Env): Promise<Response> {
     return json(400, { error: 'invalid_json' });
   }
 
-  const invalid = validateSubmission(body, base64ToBytes);
+  const invalid = validateSubmission(body, base64ToBytes, allowedCategories(env));
   if (invalid) return json(invalid.status, { error: invalid.error });
 
-  // Signature verified — hand the replay check + storage to the season DO.
-  const res: SubmitResult = await seasonStub(env, String(body.seasonId)).submit({
+  // Resolve the bucket: explicit category (v2) or classic (v1). Signature is
+  // verified against the matching message version, so the category is bound.
+  const category = typeof body.category === 'string' ? body.category : 'classic';
+  const res: SubmitResult = await bucketStub(env, String(body.seasonId), category).submit({
     wallet: body.wallet as string,
     score: body.score as number,
     hits: body.hits as number,
