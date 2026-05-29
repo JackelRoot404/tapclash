@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/config';
@@ -18,9 +18,15 @@ export default function LeaderboardScreen() {
   const [failed, setFailed] = useState(false);
   const myWallet = publicKey?.toBase58() ?? null;
 
+  // Monotonic request id: if you switch tabs (or refresh) before a slower fetch
+  // resolves, the stale response is dropped instead of overwriting the newer
+  // board's rows.
+  const reqId = useRef(0);
   const load = useCallback(async () => {
+    const myReq = ++reqId.current;
     setLoading(true);
     const data = await fetchLeaderboard(season.id, category);
+    if (myReq !== reqId.current) return; // a newer load started — drop this result
     if (data === null) {
       // Network / backend failure — keep any entries we already have.
       setFailed(true);
