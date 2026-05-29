@@ -34,9 +34,12 @@ export function useSubmitScore() {
   }, [publicKey]);
 
   const submit = useCallback(
-    async (input: SubmitInput) => {
-      // Always save locally first so a single round can't be lost to network problems.
-      await recordRound(input);
+    async (input: SubmitInput, opts?: { recordLocal?: boolean }) => {
+      // Save locally first so a single round can't be lost to network problems.
+      // recordLocal defaults true; a re-submit of the SAME round (e.g. after the
+      // player connects a wallet on the finished screen) passes false so all-time
+      // stats aren't double-counted.
+      if (opts?.recordLocal ?? true) await recordRound(input);
 
       if (!publicKey) {
         setState({ status: 'error', message: 'Connect your wallet to submit your score.' });

@@ -1,21 +1,33 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Pressable, StyleSheet } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, Text } from 'react-native';
 import { COLORS } from '../constants/config';
-import { TARGET_RADIUS } from '../constants/game';
+import type { TargetKind } from '../constants/game';
 
 type Props = {
   x: number;
   y: number;
+  kind: TargetKind;
+  radius: number;
   onHit: () => void;
 };
 
-const HALO = TARGET_RADIUS * 2.7;
+// Per-kind look. Gameplay numbers live in constants/game.ts; this is the view.
+const KIND_VISUAL: Record<TargetKind, { color: string; glyph?: string; danger?: boolean }> = {
+  normal: { color: COLORS.accent },
+  bonus: { color: COLORS.gold, glyph: '★' },
+  mini: { color: COLORS.accent2 },
+  bomb: { color: COLORS.danger, glyph: '✕', danger: true },
+};
 
-// A circular tap target: pops in with a spring, breathes a green glow halo to
-// draw the eye, and fires onHit when touched.
-export function TargetView({ x, y, onHit }: Props) {
+// A circular tap target. Pops in with a spring, breathes a colored glow halo,
+// and fires onHit when touched. Size + color vary by kind:
+//   normal=green donut, bonus=gold donut w/ star, mini=small purple donut,
+//   bomb=solid red disc w/ ✕ (DON'T tap — it penalizes / ends Sudden Death).
+export function TargetView({ x, y, kind, radius, onHit }: Props) {
   const scale = useRef(new Animated.Value(0.3)).current;
   const pulse = useRef(new Animated.Value(0)).current;
+  const v = KIND_VISUAL[kind];
+  const halo = radius * 2.7;
 
   useEffect(() => {
     Animated.spring(scale, {
@@ -39,16 +51,59 @@ export function TargetView({ x, y, onHit }: Props) {
 
   return (
     <Animated.View
-      style={[styles.wrap, { left: x - TARGET_RADIUS, top: y - TARGET_RADIUS, transform: [{ scale }] }]}
+      style={[
+        styles.wrap,
+        { width: radius * 2, height: radius * 2, left: x - radius, top: y - radius, transform: [{ scale }] },
+      ]}
       pointerEvents="box-none"
     >
       <Animated.View
         pointerEvents="none"
-        style={[styles.halo, { opacity: haloOpacity, transform: [{ scale: haloScale }] }]}
+        style={[
+          {
+            position: 'absolute',
+            width: halo,
+            height: halo,
+            left: (radius * 2 - halo) / 2,
+            top: (radius * 2 - halo) / 2,
+            borderRadius: halo / 2,
+            backgroundColor: v.color,
+          },
+          { opacity: haloOpacity, transform: [{ scale: haloScale }] },
+        ]}
       />
-      <Pressable onPress={onHit} hitSlop={10} style={styles.touch}>
-        <Animated.View style={styles.outer}>
-          <Animated.View style={styles.inner} />
+      <Pressable onPress={onHit} hitSlop={10} style={{ width: radius * 2, height: radius * 2, alignItems: 'center', justifyContent: 'center' }}>
+        <Animated.View
+          style={{
+            width: radius * 2,
+            height: radius * 2,
+            borderRadius: radius,
+            backgroundColor: v.color,
+            alignItems: 'center',
+            justifyContent: 'center',
+            shadowColor: v.color,
+            shadowOpacity: 0.8,
+            shadowRadius: 16,
+            elevation: 10,
+          }}
+        >
+          {v.danger ? (
+            // Solid disc + bold glyph so it reads as "different / dangerous".
+            <Text style={{ color: COLORS.text, fontSize: radius, fontWeight: '900', lineHeight: radius * 1.18 }}>{v.glyph}</Text>
+          ) : (
+            <Animated.View
+              style={{
+                width: radius,
+                height: radius,
+                borderRadius: radius / 2,
+                backgroundColor: COLORS.bg,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {v.glyph ? <Text style={{ color: v.color, fontSize: radius * 0.62, fontWeight: '900' }}>{v.glyph}</Text> : null}
+            </Animated.View>
+          )}
         </Animated.View>
       </Pressable>
     </Animated.View>
@@ -58,37 +113,7 @@ export function TargetView({ x, y, onHit }: Props) {
 const styles = StyleSheet.create({
   wrap: {
     position: 'absolute',
-    width: TARGET_RADIUS * 2,
-    height: TARGET_RADIUS * 2,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  halo: {
-    position: 'absolute',
-    width: HALO,
-    height: HALO,
-    left: (TARGET_RADIUS * 2 - HALO) / 2,
-    top: (TARGET_RADIUS * 2 - HALO) / 2,
-    borderRadius: HALO / 2,
-    backgroundColor: COLORS.accent,
-  },
-  touch: { width: TARGET_RADIUS * 2, height: TARGET_RADIUS * 2, alignItems: 'center', justifyContent: 'center' },
-  outer: {
-    width: TARGET_RADIUS * 2,
-    height: TARGET_RADIUS * 2,
-    borderRadius: TARGET_RADIUS,
-    backgroundColor: COLORS.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: COLORS.accent,
-    shadowOpacity: 0.8,
-    shadowRadius: 16,
-    elevation: 10,
-  },
-  inner: {
-    width: TARGET_RADIUS,
-    height: TARGET_RADIUS,
-    borderRadius: TARGET_RADIUS / 2,
-    backgroundColor: COLORS.bg,
   },
 });

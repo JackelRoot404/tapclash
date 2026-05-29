@@ -50,10 +50,30 @@ export type SubmitResponse =
   // or 409 nonce already counted) — never queue, it will never succeed.
   | { ok: false; retryable: boolean; error?: string };
 
+// fetch() has no timeout in React Native, so an unreachable or slow backend
+// would otherwise hang a request forever (e.g. the "Submitting score…" banner
+// never resolving). Abort after a bounded wait so callers fall back gracefully
+// to the offline retry queue instead of getting stuck.
+const REQUEST_TIMEOUT_MS = 8000;
+
+async function fetchWithTimeout(
+  url: string,
+  init?: RequestInit,
+  timeoutMs: number = REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function submitScore(payload: SubmitPayload): Promise<SubmitResponse> {
   if (!LEADERBOARD_URL) return { ok: false, retryable: true, error: 'no_backend_configured' };
   try {
-    const res = await fetch(`${LEADERBOARD_URL}/scores`, {
+    const res = await fetchWithTimeout(`${LEADERBOARD_URL}/scores`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -80,7 +100,7 @@ export async function submitScore(payload: SubmitPayload): Promise<SubmitRespons
 export async function fetchLeaderboard(seasonId: number): Promise<LeaderboardEntry[] | null> {
   if (!LEADERBOARD_URL) return null;
   try {
-    const res = await fetch(`${LEADERBOARD_URL}/leaderboard/${seasonId}`);
+    const res = await fetchWithTimeout(`${LEADERBOARD_URL}/leaderboard/${seasonId}`);
     if (!res.ok) return null;
     const body = await res.json();
     return body.entries ?? [];
@@ -96,7 +116,7 @@ export async function fetchPlayerStats(
 ): Promise<{ bestScore: number; rank: number | null; rounds: number } | null> {
   if (!LEADERBOARD_URL) return null;
   try {
-    const res = await fetch(`${LEADERBOARD_URL}/players/${seasonId}/${wallet}`);
+    const res = await fetchWithTimeout(`${LEADERBOARD_URL}/players/${seasonId}/${wallet}`);
     if (!res.ok) return null;
     return await res.json();
   } catch (e) {

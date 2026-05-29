@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import {
   ROUND_MS,
-  TARGET_LIFETIME_MS,
-  SPAWN_INTERVAL_START_MS,
-  SPAWN_INTERVAL_END_MS,
-  TARGET_RADIUS,
   TARGET_EDGE_PADDING,
-  HIT_POINTS,
-  PERFECT_BONUS,
   PERFECT_WINDOW_MS,
-  MISS_PENALTY,
   COMBO_STEP_BONUS,
   COMBO_MAX_BONUS,
   ACCURACY_MIN_MULT,
   ACCURACY_RANGE,
+  MAX_SCORE,
+  BOMB_TAP_PENALTY,
+  MODES,
+  TARGET_KINDS,
+  pickKind,
+  type GameMode,
+  type TargetKind,
 } from '../constants/game';
 
 export type Target = {
@@ -21,12 +21,20 @@ export type Target = {
   x: number;
   y: number;
   bornAt: number;
+  kind: TargetKind;
+  lifetimeMs: number;
 };
 
 export type GamePhase = 'idle' | 'countdown' | 'running' | 'finished';
 
+// Why a finished round ended. 'time' = the 30s buzzer; 'miss'/'bomb' = a
+// Sudden-Death stop. Drives the game-over copy + the Sudden-Death end feedback.
+export type FinishReason = 'time' | 'miss' | 'bomb';
+
 type State = {
   phase: GamePhase;
+  mode: GameMode;
+  reason: FinishReason | null;
   countdown: number;
   timeLeftMs: number;
   baseScore: number;
@@ -40,6 +48,8 @@ type State = {
 
 const initial: State = {
   phase: 'idle',
+  mode: 'classic',
+  reason: null,
   countdown: 3,
   timeLeftMs: ROUND_MS,
   baseScore: 0,
@@ -53,7 +63,7 @@ const initial: State = {
 
 type Action =
   | { type: 'reset' }
-  | { type: 'start_countdown' }
+  | { type: 'start_countdown'; mode: GameMode }
   | { type: 'tick_countdown' }
   | { type: 'tick_time'; deltaMs: number }
   | { type: 'spawn'; t: Target }
@@ -62,12 +72,32 @@ type Action =
   | { type: 'whiff' }
   | { type: 'finish' };
 
+// End the round. Only the natural buzzer ('time') folds still-on-screen good
+// targets into misses (anti-stall — you can't dodge accuracy by stalling out the
+// last second). A Sudden-Death stop ('miss'/'bomb') ends on the triggering event
+// alone: the remaining targets weren't "missed", the round just ended. Not
+// folding them also keeps the *signed* final score deterministic — otherwise a
+// tap landing in the same 50ms frame as the round-ending expire could be folded
+// into misses or not depending on dispatch order.
+function finishState(s: State, reason: FinishReason): State {
+  const pendingMisses = reason === 'time' ? s.targets.filter((t) => !TARGET_KINDS[t.kind].isPenalty).length : 0;
+  return {
+    ...s,
+    phase: 'finished',
+    reason,
+    misses: s.misses + pendingMisses,
+    combo: 0,
+    targets: [],
+    timeLeftMs: 0,
+  };
+}
+
 function reducer(s: State, a: Action): State {
   switch (a.type) {
     case 'reset':
       return { ...initial };
     case 'start_countdown':
-      return { ...initial, phase: 'countdown', countdown: 3 };
+      return { ...initial, mode: a.mode, phase: 'countdown', countdown: 3 };
     case 'tick_countdown':
       if (s.countdown <= 1) return { ...s, phase: 'running', countdown: 0, timeLeftMs: ROUND_MS };
       return { ...s, countdown: s.countdown - 1 };
@@ -75,26 +105,52 @@ function reducer(s: State, a: Action): State {
       return { ...s, timeLeftMs: Math.max(0, s.timeLeftMs - a.deltaMs) };
     case 'spawn':
       return { ...s, targets: [...s.targets, a.t], nextId: s.nextId + 1 };
-    case 'expire':
-      if (!s.targets.find((t) => t.id === a.id)) return s;
-      return {
-        ...s,
-        targets: s.targets.filter((t) => t.id !== a.id),
-        misses: s.misses + 1,
-        combo: 0,
-        baseScore: Math.max(0, s.baseScore - MISS_PENALTY),
-      };
-    case 'hit': {
+    case 'expire': {
+      if (s.phase !== 'running') return s;
       const target = s.targets.find((t) => t.id === a.id);
       if (!target) return s;
+      const kind = TARGET_KINDS[target.kind];
+      const without = s.targets.filter((t) => t.id !== a.id);
+      // A bomb left to expire is correct play — no miss, no penalty.
+      if (kind.isPenalty) return { ...s, targets: without };
+      const mode = MODES[s.mode];
+      const missed: State = {
+        ...s,
+        targets: without,
+        misses: s.misses + 1,
+        combo: 0,
+        baseScore: Math.max(0, s.baseScore - mode.missPenalty),
+      };
+      return mode.suddenDeath ? finishState(missed, 'miss') : missed;
+    }
+    case 'hit': {
+      if (s.phase !== 'running') return s;
+      const target = s.targets.find((t) => t.id === a.id);
+      if (!target) return s;
+      const kind = TARGET_KINDS[target.kind];
+      const mode = MODES[s.mode];
+      const without = s.targets.filter((t) => t.id !== a.id);
+
+      // Bomb: a mistake. Lose points, break combo, don't touch accuracy. Ends
+      // the round in Sudden Death.
+      if (kind.isPenalty) {
+        const hit: State = {
+          ...s,
+          targets: without,
+          baseScore: Math.max(0, s.baseScore - BOMB_TAP_PENALTY),
+          combo: 0,
+        };
+        return mode.suddenDeath ? finishState(hit, 'bomb') : hit;
+      }
+
       const age = a.now - target.bornAt;
       const perfect = age <= PERFECT_WINDOW_MS;
       const nextCombo = s.combo + 1;
       const comboBonus = Math.min(COMBO_MAX_BONUS, nextCombo * COMBO_STEP_BONUS);
-      const gained = HIT_POINTS + (perfect ? PERFECT_BONUS : 0) + comboBonus;
+      const gained = kind.points + (perfect ? mode.perfectBonus : 0) + comboBonus;
       return {
         ...s,
-        targets: s.targets.filter((t) => t.id !== a.id),
+        targets: without,
         baseScore: s.baseScore + gained,
         hits: s.hits + 1,
         combo: nextCombo,
@@ -102,39 +158,35 @@ function reducer(s: State, a: Action): State {
       };
     }
     case 'whiff':
+      // Tapping empty space: lose combo + a little score. Guard on phase so a tap
+      // landing just as the round ends can't mutate the already-measured score.
+      // Not lethal in Sudden Death (only a real miss or bomb tap ends it).
+      if (s.phase !== 'running') return s;
       return {
         ...s,
         combo: 0,
-        baseScore: Math.max(0, s.baseScore - Math.floor(MISS_PENALTY / 2)),
+        baseScore: Math.max(0, s.baseScore - Math.floor(MODES[s.mode].missPenalty / 2)),
       };
     case 'finish':
-      // Targets still on screen at the buzzer were presented but not hit — count
-      // them as misses so accuracy (and the signed final score) reflect the full
-      // round. Otherwise stalling in the last ~1s would inflate the score.
-      return {
-        ...s,
-        phase: 'finished',
-        misses: s.misses + s.targets.length,
-        combo: 0,
-        targets: [],
-        timeLeftMs: 0,
-      };
+      return finishState(s, 'time');
   }
 }
 
-function currentSpawnIntervalMs(timeLeftMs: number): number {
+function currentSpawnIntervalMs(mode: GameMode, timeLeftMs: number): number {
+  const m = MODES[mode];
   const progress = 1 - timeLeftMs / ROUND_MS;
-  return SPAWN_INTERVAL_START_MS + (SPAWN_INTERVAL_END_MS - SPAWN_INTERVAL_START_MS) * progress;
+  return m.spawnStartMs + (m.spawnEndMs - m.spawnStartMs) * progress;
 }
 
 export function finalScore(state: { baseScore: number; hits: number; misses: number }): number {
   const total = state.hits + state.misses;
   const accuracy = total > 0 ? state.hits / total : 0;
   const mult = ACCURACY_MIN_MULT + ACCURACY_RANGE * accuracy;
-  return Math.round(state.baseScore * mult);
+  // Clamp to the frozen-contract ceiling so no mode/target mix can exceed it.
+  return Math.min(MAX_SCORE, Math.max(0, Math.round(state.baseScore * mult)));
 }
 
-export function useTapGame(arenaW: number, arenaH: number) {
+export function useTapGame(arenaW: number, arenaH: number, mode: GameMode) {
   const [state, dispatch] = useReducer(reducer, initial);
 
   // Refs let the game-loop effect read fresh values without recreating the loop
@@ -163,31 +215,35 @@ export function useTapGame(arenaW: number, arenaH: number) {
       const now = Date.now();
       const cur = stateRef.current;
       const arena = arenaRef.current;
+      const activeMode = cur.mode;
 
       dispatch({ type: 'tick_time', deltaMs: TICK_MS });
 
-      // Expire any targets that aged past their lifetime.
+      // Expire any targets that aged past their own lifetime.
       for (const target of cur.targets) {
-        if (now - target.bornAt >= TARGET_LIFETIME_MS) {
+        if (now - target.bornAt >= target.lifetimeMs) {
           dispatch({ type: 'expire', id: target.id });
         }
       }
 
       // Spawn cadence ramps as the round progresses.
-      const spawnGap = currentSpawnIntervalMs(cur.timeLeftMs);
+      const spawnGap = currentSpawnIntervalMs(activeMode, cur.timeLeftMs);
       if (now - lastSpawn >= spawnGap && arena.w > 0 && arena.h > 0) {
         lastSpawn = now;
-        const xRange = Math.max(0, arena.w - 2 * (TARGET_EDGE_PADDING + TARGET_RADIUS));
-        const yRange = Math.max(0, arena.h - 2 * (TARGET_EDGE_PADDING + TARGET_RADIUS));
-        const x = TARGET_EDGE_PADDING + TARGET_RADIUS + Math.random() * xRange;
-        const y = TARGET_EDGE_PADDING + TARGET_RADIUS + Math.random() * yRange;
-        dispatch({ type: 'spawn', t: { id: cur.nextId, x, y, bornAt: now } });
+        const kind = pickKind(MODES[activeMode], Math.random());
+        const radius = TARGET_KINDS[kind].radius;
+        const lifetimeMs = Math.round(MODES[activeMode].baseLifetimeMs * TARGET_KINDS[kind].lifetimeMult);
+        const xRange = Math.max(0, arena.w - 2 * (TARGET_EDGE_PADDING + radius));
+        const yRange = Math.max(0, arena.h - 2 * (TARGET_EDGE_PADDING + radius));
+        const x = TARGET_EDGE_PADDING + radius + Math.random() * xRange;
+        const y = TARGET_EDGE_PADDING + radius + Math.random() * yRange;
+        dispatch({ type: 'spawn', t: { id: cur.nextId, x, y, bornAt: now, kind, lifetimeMs } });
       }
     }, TICK_MS);
 
     return () => clearInterval(interval);
-  // Intentionally only re-create when phase or arena dimensions change.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Intentionally only re-create when phase or arena dimensions change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.phase, arenaW, arenaH]);
 
   useEffect(() => {
@@ -196,7 +252,7 @@ export function useTapGame(arenaW: number, arenaH: number) {
     }
   }, [state.phase, state.timeLeftMs]);
 
-  const start = useCallback(() => dispatch({ type: 'start_countdown' }), []);
+  const start = useCallback(() => dispatch({ type: 'start_countdown', mode }), [mode]);
   const reset = useCallback(() => dispatch({ type: 'reset' }), []);
   const hit = useCallback((id: number) => dispatch({ type: 'hit', id, now: Date.now() }), []);
   const whiff = useCallback(() => dispatch({ type: 'whiff' }), []);

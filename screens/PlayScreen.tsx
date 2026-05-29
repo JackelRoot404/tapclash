@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View, LayoutChangeEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { COLORS } from '../constants/config';
-import { useTapGame, finalScore } from '../hooks/useTapGame';
+import { useTapGame, finalScore, type FinishReason } from '../hooks/useTapGame';
 import { TargetView } from '../components/Target';
 import { Burst } from '../components/Burst';
 import { BackgroundField } from '../components/BackgroundField';
@@ -16,39 +17,77 @@ import { useSubmitScore, SubmitResult } from '../hooks/useSubmitScore';
 import { usePoolSeason } from '../hooks/usePoolSeason';
 import { isOpenForEntry } from '../sdk/src';
 import { lamportsToSol } from '../services/pools';
-import { ROUND_MS } from '../constants/game';
+import { ROUND_MS, MODES, MODE_ORDER, TARGET_KINDS, type GameMode, type TargetKind } from '../constants/game';
+
+const MODE_KEY = 'tapclash:mode';
 
 export default function PlayScreen() {
   const [arena, setArena] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
-  const game = useTapGame(arena.w, arena.h);
+  const [mode, setMode] = useState<GameMode>('classic');
+  const game = useTapGame(arena.w, arena.h, mode);
   const { season } = useSeason();
   const { connected, connect, connecting, error: walletError } = useWallet();
   const submit = useSubmitScore();
   const { poolSeason, entry, busy: poolBusy, enter } = usePoolSeason();
   const [submittedFor, setSubmittedFor] = useState<number | null>(null);
 
+  // Remember the chosen mode across launches.
+  useEffect(() => {
+    AsyncStorage.getItem(MODE_KEY)
+      .then((v) => {
+        if (v && (MODE_ORDER as string[]).includes(v)) setMode(v as GameMode);
+      })
+      .catch(() => {});
+  }, []);
+  const selectMode = (m: GameMode) => {
+    setMode(m);
+    AsyncStorage.setItem(MODE_KEY, m).catch(() => {});
+  };
+
   // Juice: hit bursts, green flash, subtle arena shake.
   const [bursts, setBursts] = useState<{ id: number; x: number; y: number }[]>([]);
   const burstId = useRef(0);
   const flash = useRef(new Animated.Value(0)).current;
+  const bombFlash = useRef(new Animated.Value(0)).current;
   const shake = useRef(new Animated.Value(0)).current;
   const lastShake = useRef(0);
   const shakeX = shake.interpolate({ inputRange: [-1, 1], outputRange: [-3, 3] });
   const shakeY = shake.interpolate({ inputRange: [-1, 1], outputRange: [-2, 2] });
+
+  // Target ids whose tap side-effects already fired this round (a fast double-tap
+  // lands two presses before the reducer drops the target — don't double-buzz).
+  // Cleared each round; ids restart at 1 per round so this MUST reset on start.
+  const consumed = useRef<Set<number>>(new Set());
+  // Whether this round's local stats were already recorded (so a re-submit after
+  // connecting a wallet doesn't double-count the round in all-time stats).
+  const recordedRound = useRef(false);
 
   const onArenaLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     setArena({ w: width, h: height });
   };
 
-  const submitRound = () =>
-    submit.submit({
-      seasonId: season.id,
-      score: finalScore(game.state),
-      hits: game.state.hits,
-      misses: game.state.misses,
-      durationMs: ROUND_MS,
-    });
+  const submitRound = () => {
+    const recordLocal = !recordedRound.current;
+    recordedRound.current = true;
+    return submit.submit(
+      {
+        seasonId: season.id,
+        score: finalScore(game.state),
+        hits: game.state.hits,
+        misses: game.state.misses,
+        durationMs: ROUND_MS,
+      },
+      { recordLocal }
+    );
+  };
+
+  const startRound = () => {
+    consumed.current.clear();
+    recordedRound.current = false;
+    setSubmittedFor(null);
+    game.start();
+  };
 
   // Auto-submit best-effort once the round ends (records locally even if no wallet).
   useEffect(() => {
@@ -69,7 +108,38 @@ export default function PlayScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
-  const onHit = (id: number, x: number, y: number) => {
+  // Sudden Death ending on a *miss* (a target expired) has no user tap to hang
+  // feedback off, so the round would otherwise just vanish silently. Mirror the
+  // bomb-tap feedback: a red flash + warning haptic so the abrupt end is felt.
+  useEffect(() => {
+    if (game.state.phase === 'finished' && game.state.reason === 'miss') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      bombFlash.stopAnimation();
+      Animated.sequence([
+        Animated.timing(bombFlash, { toValue: 0.3, duration: 70, useNativeDriver: true }),
+        Animated.timing(bombFlash, { toValue: 0, duration: 260, useNativeDriver: true }),
+      ]).start();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.state.phase, game.state.reason]);
+
+  const onHit = (id: number, x: number, y: number, kind: TargetKind) => {
+    // A fast double-tap can fire two presses before the reducer removes the
+    // target; gate side-effects (and the dispatch) on first consumption so we
+    // don't double-buzz or double-burst.
+    if (consumed.current.has(id)) return;
+    consumed.current.add(id);
+    if (kind === 'bomb') {
+      // Tapping a bomb is a mistake: warning haptic + red flash, no green burst.
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      game.hit(id);
+      bombFlash.stopAnimation();
+      Animated.sequence([
+        Animated.timing(bombFlash, { toValue: 0.28, duration: 60, useNativeDriver: true }),
+        Animated.timing(bombFlash, { toValue: 0, duration: 220, useNativeDriver: true }),
+      ]).start();
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     game.hit(id);
     const bid = burstId.current++;
@@ -116,7 +186,14 @@ export default function PlayScreen() {
         {/* Targets are absolutely positioned within the arena */}
         {game.state.phase === 'running' &&
           game.state.targets.map((t) => (
-            <TargetView key={t.id} x={t.x} y={t.y} onHit={() => onHit(t.id, t.x, t.y)} />
+            <TargetView
+              key={t.id}
+              x={t.x}
+              y={t.y}
+              kind={t.kind}
+              radius={TARGET_KINDS[t.kind].radius}
+              onHit={() => onHit(t.id, t.x, t.y, t.kind)}
+            />
           ))}
 
         {bursts.map((b) => (
@@ -124,12 +201,14 @@ export default function PlayScreen() {
         ))}
 
         <Animated.View pointerEvents="none" style={[styles.flash, { opacity: flash }]} />
+        <Animated.View pointerEvents="none" style={[styles.flash, styles.bombFlash, { opacity: bombFlash }]} />
 
         {game.state.phase === 'idle' && (
           <Overlay>
             <Text style={styles.bigText}>Ready?</Text>
-            <Text style={styles.body}>Tap the green dots before they vanish. 30 seconds. Big combos = big scores.</Text>
-            <Button label="Start round" onPress={game.start} style={{ marginTop: 24, minWidth: 220 }} />
+            <ModePicker mode={mode} onSelect={selectMode} />
+            <Text style={styles.body}>{MODES[mode].blurb}</Text>
+            <Button label="Start round" onPress={startRound} style={{ marginTop: 22, minWidth: 220 }} />
 
             {poolSeason && isOpenForEntry(poolSeason) && (
               entry?.paid ? (
@@ -162,6 +241,9 @@ export default function PlayScreen() {
             <Text style={styles.body}>
               {game.state.hits} hits · {game.state.misses} misses · best combo {game.state.bestCombo}x
             </Text>
+            <Text style={[styles.modeResult, game.state.reason === 'time' && game.state.mode === 'sudden' && styles.modeResultWin]}>
+              {resultCaption(game.state.mode, game.state.reason)}
+            </Text>
 
             <SubmitBanner state={submit.state} />
 
@@ -190,6 +272,8 @@ export default function PlayScreen() {
               onPress={() => {
                 submit.reset();
                 setSubmittedFor(null);
+                consumed.current.clear();
+                recordedRound.current = false;
                 game.reset();
               }}
               style={{ marginTop: 16, minWidth: 220 }}
@@ -204,6 +288,32 @@ export default function PlayScreen() {
 
 function Overlay({ children }: { children: React.ReactNode }) {
   return <View style={styles.overlay}>{children}</View>;
+}
+
+function ModePicker({ mode, onSelect }: { mode: GameMode; onSelect: (m: GameMode) => void }) {
+  return (
+    <View style={styles.modeRow}>
+      {MODE_ORDER.map((m) => {
+        const active = m === mode;
+        return (
+          <Pressable key={m} onPress={() => onSelect(m)} style={[styles.modeChip, active && styles.modeChipActive]}>
+            <Text style={[styles.modeChipText, active && styles.modeChipTextActive]}>{MODES[m].label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+// Game-over caption: the mode label, plus why a Sudden-Death round ended.
+function resultCaption(mode: GameMode, reason: FinishReason | null): string {
+  const label = MODES[mode].label;
+  if (mode === 'sudden') {
+    if (reason === 'miss') return `${label} · ended on a miss`;
+    if (reason === 'bomb') return `${label} · ended on a bomb 💣`;
+    return `${label} · you survived the full round! 🏆`;
+  }
+  return label;
 }
 
 function SubmitBanner({ state }: { state: SubmitResult }) {
@@ -253,6 +363,7 @@ const styles = StyleSheet.create({
   hudWrap: { paddingVertical: 6 },
   arenaShake: { flex: 1 },
   flash: { ...StyleSheet.absoluteFillObject, backgroundColor: COLORS.accent },
+  bombFlash: { backgroundColor: COLORS.danger },
   arenaWrap: {
     flex: 1,
     backgroundColor: COLORS.bgElev,
@@ -279,4 +390,18 @@ const styles = StyleSheet.create({
   bannerText: { fontSize: 13, fontWeight: '600' },
   errorNote: { color: COLORS.danger, fontSize: 12, marginTop: 10, textAlign: 'center', maxWidth: 300 },
   poolNote: { color: COLORS.accent2, fontSize: 12, marginTop: 14, textAlign: 'center', maxWidth: 300, lineHeight: 18 },
+  modeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 18, marginBottom: 2, maxWidth: 340 },
+  modeChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bgElev2,
+  },
+  modeChipActive: { borderColor: COLORS.accent, backgroundColor: 'rgba(20, 241, 149, 0.14)' },
+  modeChipText: { color: COLORS.textDim, fontSize: 13, fontWeight: '700' },
+  modeChipTextActive: { color: COLORS.accent },
+  modeResult: { color: COLORS.textDim, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, marginTop: 8 },
+  modeResultWin: { color: COLORS.gold },
 });
