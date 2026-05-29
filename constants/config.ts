@@ -1,10 +1,20 @@
-export const SOLANA_NETWORK = 'mainnet-beta' as const;
+// Cluster flag: flip to devnet (EXPO_PUBLIC_SOLANA_CLUSTER=devnet) to test the v2
+// paid-pools program (deployed on devnet) without code edits. Drives the MWA
+// authorize cluster + RPC. Score submission is signature-based and cluster-
+// agnostic, so the MVP leaderboard works on either. Defaults to mainnet-beta.
+export const SOLANA_CLUSTER: 'mainnet-beta' | 'devnet' =
+  process.env.EXPO_PUBLIC_SOLANA_CLUSTER === 'devnet' ? 'devnet' : 'mainnet-beta';
+
+export const SOLANA_NETWORK = SOLANA_CLUSTER;
 
 export const HELIUS_API_KEY = process.env.EXPO_PUBLIC_HELIUS_API_KEY ?? '';
 
-export const RPC_ENDPOINT = HELIUS_API_KEY
-  ? `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`
-  : 'https://api.mainnet-beta.solana.com';
+export const RPC_ENDPOINT =
+  SOLANA_CLUSTER === 'devnet'
+    ? 'https://api.devnet.solana.com'
+    : HELIUS_API_KEY
+      ? `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`
+      : 'https://api.mainnet-beta.solana.com';
 
 // Backend that verifies signed scores and serves the season leaderboard.
 // Production builds MUST set EXPO_PUBLIC_LEADERBOARD_URL to the deployed (https)

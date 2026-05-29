@@ -1,6 +1,5 @@
-import 'react-native-get-random-values';
-import { Buffer } from 'buffer';
-global.Buffer = Buffer;
+// Polyfills first — installs global.Buffer before the SDK / web3.js load.
+import './globals';
 
 // React Navigation's native-screens optimization (new architecture / Fabric)
 // ghosts a faint copy of the bottom tab bar onto the Play screen's static

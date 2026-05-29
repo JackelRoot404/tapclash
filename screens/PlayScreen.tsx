@@ -1,16 +1,21 @@
-import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, LayoutChangeEvent } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View, LayoutChangeEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 import { COLORS } from '../constants/config';
 import { useTapGame, finalScore } from '../hooks/useTapGame';
 import { TargetView } from '../components/Target';
+import { Burst } from '../components/Burst';
+import { BackgroundField } from '../components/BackgroundField';
 import { Hud } from '../components/Hud';
 import { Button } from '../components/Button';
 import { useSeason } from '../context/SeasonContext';
 import { useWallet } from '../context/WalletContext';
 import { useSubmitScore, SubmitResult } from '../hooks/useSubmitScore';
+import { usePoolSeason } from '../hooks/usePoolSeason';
+import { isOpenForEntry } from '../sdk/src';
+import { lamportsToSol } from '../services/pools';
 import { ROUND_MS } from '../constants/game';
 
 export default function PlayScreen() {
@@ -19,7 +24,17 @@ export default function PlayScreen() {
   const { season } = useSeason();
   const { connected, connect, connecting, error: walletError } = useWallet();
   const submit = useSubmitScore();
+  const { poolSeason, entry, busy: poolBusy, enter } = usePoolSeason();
   const [submittedFor, setSubmittedFor] = useState<number | null>(null);
+
+  // Juice: hit bursts, green flash, subtle arena shake.
+  const [bursts, setBursts] = useState<{ id: number; x: number; y: number }[]>([]);
+  const burstId = useRef(0);
+  const flash = useRef(new Animated.Value(0)).current;
+  const shake = useRef(new Animated.Value(0)).current;
+  const lastShake = useRef(0);
+  const shakeX = shake.interpolate({ inputRange: [-1, 1], outputRange: [-3, 3] });
+  const shakeY = shake.interpolate({ inputRange: [-1, 1], outputRange: [-2, 2] });
 
   const onArenaLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -54,9 +69,27 @@ export default function PlayScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
-  const onHit = (id: number) => {
+  const onHit = (id: number, x: number, y: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     game.hit(id);
+    const bid = burstId.current++;
+    setBursts((b) => [...b, { id: bid, x, y }]);
+    flash.stopAnimation();
+    Animated.sequence([
+      Animated.timing(flash, { toValue: 0.1, duration: 45, useNativeDriver: true }),
+      Animated.timing(flash, { toValue: 0, duration: 110, useNativeDriver: true }),
+    ]).start();
+    // Throttle the shake so rapid taps don't compound into constant jitter.
+    const now = Date.now();
+    if (now - lastShake.current > 90) {
+      lastShake.current = now;
+      shake.stopAnimation();
+      Animated.sequence([
+        Animated.timing(shake, { toValue: 1, duration: 35, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: -0.6, duration: 45, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: 0, duration: 45, useNativeDriver: true }),
+      ]).start();
+    }
   };
 
   const onArenaPress = () => {
@@ -76,18 +109,43 @@ export default function PlayScreen() {
         <Hud timeLeftMs={game.state.timeLeftMs} score={game.state.baseScore} combo={game.state.combo} />
       </View>
 
+      <Animated.View style={[styles.arenaShake, { transform: [{ translateX: shakeX }, { translateY: shakeY }] }]}>
       <Pressable onPress={onArenaPress} style={styles.arenaWrap} onLayout={onArenaLayout}>
+        <BackgroundField w={arena.w} h={arena.h} />
+
         {/* Targets are absolutely positioned within the arena */}
         {game.state.phase === 'running' &&
           game.state.targets.map((t) => (
-            <TargetView key={t.id} x={t.x} y={t.y} onHit={() => onHit(t.id)} />
+            <TargetView key={t.id} x={t.x} y={t.y} onHit={() => onHit(t.id, t.x, t.y)} />
           ))}
+
+        {bursts.map((b) => (
+          <Burst key={b.id} x={b.x} y={b.y} onDone={() => setBursts((cur) => cur.filter((z) => z.id !== b.id))} />
+        ))}
+
+        <Animated.View pointerEvents="none" style={[styles.flash, { opacity: flash }]} />
 
         {game.state.phase === 'idle' && (
           <Overlay>
             <Text style={styles.bigText}>Ready?</Text>
             <Text style={styles.body}>Tap the green dots before they vanish. 30 seconds. Big combos = big scores.</Text>
             <Button label="Start round" onPress={game.start} style={{ marginTop: 24, minWidth: 220 }} />
+
+            {poolSeason && isOpenForEntry(poolSeason) && (
+              entry?.paid ? (
+                <Text style={styles.poolNote}>Entered — you're in this season's {lamportsToSol(poolSeason.poolTotal)} SOL pool.</Text>
+              ) : connected ? (
+                <Button
+                  label={poolBusy === 'enter' ? 'Entering…' : `Enter pool · ${lamportsToSol(poolSeason.entryFee)} SOL`}
+                  variant="secondary"
+                  onPress={enter}
+                  loading={poolBusy === 'enter'}
+                  style={{ marginTop: 12, minWidth: 220 }}
+                />
+              ) : (
+                <Text style={styles.poolNote}>Connect your wallet (Profile) to enter the {lamportsToSol(poolSeason.entryFee)} SOL pool.</Text>
+              )
+            )}
           </Overlay>
         )}
 
@@ -139,6 +197,7 @@ export default function PlayScreen() {
           </Overlay>
         )}
       </Pressable>
+      </Animated.View>
     </SafeAreaView>
   );
 }
@@ -192,6 +251,8 @@ const styles = StyleSheet.create({
   title: { color: COLORS.text, fontSize: 24, fontWeight: '800', letterSpacing: 0.5 },
   subtitle: { color: COLORS.textDim, fontSize: 12, marginTop: 2 },
   hudWrap: { paddingVertical: 6 },
+  arenaShake: { flex: 1 },
+  flash: { ...StyleSheet.absoluteFillObject, backgroundColor: COLORS.accent },
   arenaWrap: {
     flex: 1,
     backgroundColor: COLORS.bgElev,
@@ -217,4 +278,5 @@ const styles = StyleSheet.create({
   banner: { marginTop: 16, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1 },
   bannerText: { fontSize: 13, fontWeight: '600' },
   errorNote: { color: COLORS.danger, fontSize: 12, marginTop: 10, textAlign: 'center', maxWidth: 300 },
+  poolNote: { color: COLORS.accent2, fontSize: 12, marginTop: 14, textAlign: 'center', maxWidth: 300, lineHeight: 18 },
 });

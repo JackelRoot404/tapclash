@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol';
-import { PublicKey } from '@solana/web3.js';
+import { transact as transactWeb3 } from '@solana-mobile/mobile-wallet-adapter-protocol-web3js';
+import { PublicKey, Transaction } from '@solana/web3.js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { APP_IDENTITY, SOLANA_NETWORK } from '../constants/config';
@@ -23,6 +24,9 @@ export type WalletState = {
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   signMessage: (message: Uint8Array) => Promise<SignResult>;
+  // Sign + submit a transaction (v2 paid pools: enter/claim). Returns the
+  // signature, or null on failure/cancel.
+  signAndSendTransaction: (tx: Transaction) => Promise<string | null>;
 };
 
 // MWA account addresses are base64-encoded raw pubkeys.
@@ -229,6 +233,37 @@ export function useSeedVault(): WalletState {
     [authToken, publicKey, persistAuth]
   );
 
+  const signAndSendTransaction = useCallback(
+    async (tx: Transaction): Promise<string | null> => {
+      try {
+        let sig: string | null = null;
+        await transactWeb3(async (wallet) => {
+          let auth;
+          try {
+            auth = authToken
+              ? await wallet.reauthorize({ auth_token: authToken, identity: APP_IDENTITY })
+              : await wallet.authorize({ cluster: SOLANA_NETWORK, identity: APP_IDENTITY });
+          } catch (reauthErr) {
+            if (isUserCancellation(reauthErr)) throw reauthErr;
+            setAuthToken(null);
+            await SecureStore.deleteItemAsync(AUTH_TOKEN_KEY);
+            auth = await wallet.authorize({ cluster: SOLANA_NETWORK, identity: APP_IDENTITY });
+          }
+          await persistAuth(auth, publicKey);
+          const sigs = await wallet.signAndSendTransactions({ transactions: [tx] });
+          sig = sigs[0] ?? null;
+        });
+        return sig;
+      } catch (e) {
+        if (isUserCancellation(e)) return null;
+        console.error('signAndSendTransaction failed:', e);
+        setError('Transaction failed. Please try again.');
+        return null;
+      }
+    },
+    [authToken, publicKey, persistAuth]
+  );
+
   return {
     publicKey,
     authToken,
@@ -238,5 +273,6 @@ export function useSeedVault(): WalletState {
     connect,
     disconnect,
     signMessage,
+    signAndSendTransaction,
   };
 }

@@ -7,12 +7,17 @@ import { useWallet } from '../context/WalletContext';
 import { useSeason } from '../context/SeasonContext';
 import { getLocalStats, LocalStats } from '../services/stats';
 import { fetchPlayerStats } from '../services/leaderboard';
+import { usePoolSeason } from '../hooks/usePoolSeason';
+import { claimableLamports } from '../sdk/src';
+import { lamportsToSol } from '../services/pools';
 
 export default function ProfileScreen() {
   const { publicKey, connected, connecting, connect, disconnect, error: walletError } = useWallet();
   const { season } = useSeason();
   const [local, setLocal] = useState<LocalStats | null>(null);
   const [serverRank, setServerRank] = useState<number | null>(null);
+  const { poolSeason, entry, busy: poolBusy, claim } = usePoolSeason();
+  const owed = poolSeason && entry ? claimableLamports(poolSeason, entry) : 0n;
 
   useEffect(() => {
     getLocalStats().then(setLocal);
@@ -60,6 +65,20 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {owed > 0n && (
+          <View style={styles.card}>
+            <Text style={styles.label}>SEASON PAYOUT</Text>
+            <Text style={styles.payout}>{lamportsToSol(owed)} SOL</Text>
+            <Text style={styles.note}>You finished in the paid top 10 — claim your winnings.</Text>
+            <Button
+              label={poolBusy === 'claim' ? 'Claiming…' : 'Claim winnings'}
+              onPress={claim}
+              loading={poolBusy === 'claim'}
+              style={{ marginTop: 14 }}
+            />
+          </View>
+        )}
+
         <View style={styles.card}>
           <Text style={styles.label}>THIS SEASON</Text>
           <View style={styles.statRow}>
@@ -97,6 +116,7 @@ const styles = StyleSheet.create({
   label: { color: COLORS.textDim, fontSize: 11, letterSpacing: 1.5, fontWeight: '700', marginBottom: 8 },
   wallet: { color: COLORS.text, fontSize: 12, fontFamily: 'monospace' },
   note: { color: COLORS.textDim, fontSize: 13, lineHeight: 20 },
+  payout: { color: COLORS.gold, fontSize: 26, fontWeight: '800', marginTop: 6 },
   errorNote: { color: COLORS.danger, fontSize: 12, marginTop: 10, lineHeight: 18 },
   statRow: { flexDirection: 'row', marginTop: 4 },
   stat: { flex: 1 },

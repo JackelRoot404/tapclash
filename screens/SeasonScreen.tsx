@@ -4,12 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/config';
 import { useSeason } from '../context/SeasonContext';
 import { formatCountdown, PAYOUT_SPLIT_BPS } from '../utils/season';
+import { usePoolSeason } from '../hooks/usePoolSeason';
+import { lamportsToSol } from '../services/pools';
 
 export default function SeasonScreen() {
   const { season, msRemaining } = useSeason();
-  // v1 ships score-only. Pool is shown as "TBD" until the on-chain entry-fee
-  // program from v2 is wired up.
-  const poolText = 'TBD (score-only beta)';
+  // Real on-chain pool when a paid season exists (v2); else score-only beta.
+  const { poolSeason } = usePoolSeason();
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -25,10 +26,23 @@ export default function SeasonScreen() {
 
         <View style={styles.card}>
           <Text style={styles.label}>PRIZE POOL</Text>
-          <Text style={styles.poolValue}>{poolText}</Text>
-          <Text style={styles.note}>
-            Paid entries arrive in v2 — top 10 will split the season pool by the split below.
-          </Text>
+          {poolSeason ? (
+            <>
+              <Text style={styles.poolValue}>{lamportsToSol(poolSeason.poolTotal)} SOL</Text>
+              <Text style={styles.note}>
+                {poolSeason.entrants} {poolSeason.entrants === 1 ? 'entrant' : 'entrants'} · entry{' '}
+                {lamportsToSol(poolSeason.entryFee)} SOL · {poolSeason.finalized ? 'finalized' : 'open'}. Top 10
+                split the pool by the breakdown below.
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.poolValue}>TBD (score-only beta)</Text>
+              <Text style={styles.note}>
+                Paid entries arrive in v2 — top 10 will split the season pool by the split below.
+              </Text>
+            </>
+          )}
         </View>
 
         <View style={styles.card}>
