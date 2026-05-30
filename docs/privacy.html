@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TapClash — Privacy Policy</title>
+  <style>
+    :root { --bg:#0a0a0a; --elev:#141420; --text:#f5f5f7; --dim:#8a8aa3; --accent:#14F195; --border:rgba(20,241,149,.18); }
+    body { margin:0; background:var(--bg); color:#d8d8e0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.65; }
+    .wrap { max-width:760px; margin:0 auto; padding:56px 24px 96px; }
+    h1 { color:var(--text); font-size:30px; }
+    h2 { color:var(--text); font-size:20px; margin-top:36px; }
+    .updated { color:var(--dim); font-size:14px; }
+    a { color:var(--accent); }
+    code { background:var(--elev); padding:2px 6px; border-radius:6px; }
+    .back { color:var(--dim); text-decoration:none; font-size:14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="./index.html">&larr; TapClash</a>
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: 30 May 2026</p>
+
+    <p>TapClash ("the app") is a reaction-speed game for the Solana Seeker. We
+    designed it to collect as little as possible. There are no accounts, no
+    email sign-up, no advertising, and no third-party analytics or tracking.</p>
+
+    <h2>What we collect</h2>
+    <p>To run the global leaderboard, the app submits the following when you
+    choose to post a score:</p>
+    <ul>
+      <li>Your <strong>Solana wallet public address</strong> (a public identifier — never your private key)</li>
+      <li>Your <strong>game results</strong> for a round: score, hits, misses, accuracy, game mode, round duration</li>
+      <li>A random one-time <strong>nonce</strong> and your wallet's <strong>cryptographic signature</strong> of the score, used to verify the submission is genuine</li>
+    </ul>
+    <p>That's it. We do not collect your name, email, phone number, contacts,
+    location, device identifiers, or any other personal information.</p>
+
+    <h2>Your wallet &amp; keys</h2>
+    <p>Wallet authentication and signing happen entirely through the Solana
+    <strong>Seed Vault</strong> on your device. Your private keys never leave
+    your device and are never transmitted to or stored by us.</p>
+
+    <h2>Where data is stored</h2>
+    <ul>
+      <li><strong>Leaderboard:</strong> submitted scores are stored on a Cloudflare Workers backend, organized by season and game mode. Best score per wallet per season is retained.</li>
+      <li><strong>Blockchain:</strong> if you opt into a paid prize pool (a future feature), the relevant transactions are recorded publicly on the Solana blockchain. On-chain data is public and permanent by nature.</li>
+      <li><strong>On your device:</strong> your local stats and last-used settings are stored on-device only.</li>
+    </ul>
+
+    <h2>Data sharing</h2>
+    <p>We do not sell or share your data with third parties. Leaderboard entries
+    (a shortened wallet address and score) are visible to other players by
+    design — that is the point of a public leaderboard.</p>
+
+    <h2>Data retention &amp; deletion</h2>
+    <p>Leaderboard data is associated with a season. Because submissions are tied
+    only to a public wallet address you control, you can stop submitting at any
+    time. To request removal of a leaderboard entry, contact us at the email
+    below with the wallet address in question. On-chain transactions cannot be
+    deleted, as they are part of the public Solana ledger.</p>
+
+    <h2>Children</h2>
+    <p>TapClash is not directed to children under 13 and does not knowingly
+    collect information from them.</p>
+
+    <h2>Changes</h2>
+    <p>We may update this policy as the app evolves. Material changes will be
+    reflected here with a new "last updated" date.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about this policy: <a href="mailto:twigzzz28@gmail.com">twigzzz28@gmail.com</a></p>
+  </div>
+</body>
+</html>

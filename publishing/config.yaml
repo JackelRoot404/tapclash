@@ -4,7 +4,7 @@
 
 publisher:
   name: TapClash Labs
-  website: https://tapclash.app
+  website: https://jackelroot404.github.io/solana-seeker-tapclash/
   email: twigzzz28@gmail.com
   address: Remote, US
 
@@ -12,10 +12,12 @@ app:
   android_package: com.tapclash.app
   name: TapClash
   urls:
-    license_url: https://github.com/twigzzz28/tapclash/blob/main/LICENSE
-    copyright_url: https://tapclash.app/copyright
-    privacy_policy_url: https://tapclash.app/privacy
-    website: https://tapclash.app
+    # GitHub Pages site (docs/ on main). CONFIRM the exact base URL after Pages is
+    # enabled — the lowercased owner login may differ if the account is renamed.
+    license_url: https://jackelroot404.github.io/solana-seeker-tapclash/copyright.html
+    copyright_url: https://jackelroot404.github.io/solana-seeker-tapclash/copyright.html
+    privacy_policy_url: https://jackelroot404.github.io/solana-seeker-tapclash/privacy.html
+    website: https://jackelroot404.github.io/solana-seeker-tapclash/
   google_store_package: null
 
 release:
@@ -46,18 +48,20 @@ release:
 
         TapClash is a 30-second reaction-speed game built for Solana Seeker.
         Targets pop up on screen — tap them before they vanish. Hit early for
-        bonus points, chain them for combos, and aim for perfect accuracy.
+        bonus points, grab the gold targets, dodge the bombs, chain combos, and
+        aim for perfect accuracy.
 
-        Every score is signed by your Seed Vault wallet and posted to a global
-        monthly leaderboard. Top finishers earn season-end ranks. Paid prize
-        pools land in v2.
+        Pick your style across four game modes — Classic, Frenzy, Precision, and
+        Sudden Death — each with its own independent leaderboard. Every score is
+        signed by your Seed Vault wallet and posted to a global monthly board.
+        Top finishers earn season-end ranks. Paid prize pools are coming.
 
         - 30-second rounds you can play in line for coffee
-        - Tight, scoring-driven gameplay: combos, perfects, accuracy multipliers
+        - Four game modes + varied targets (bonus, mini, bomb), each its own board
         - Monthly seasons reset on the 1st, UTC — fresh start every month
-        - Your wallet, your scores — no email, no account
+        - Your wallet, your scores — no email, no account, no tracking
         - Built natively for Solana Seeker and the Seed Vault
-      new_in_version: Initial release.
+      new_in_version: Initial release — four game modes, target variety, and per-mode signed-score leaderboards.
       saga_features: |
         TapClash uses the Solana Seed Vault for wallet authentication and
         score signing. No private keys ever leave your device.
