@@ -4,7 +4,7 @@
 
 publisher:
   name: TapClash Labs
-  website: https://jackelroot404.github.io/solana-seeker-tapclash/
+  website: https://jackelroot404.github.io/tapclash/
   email: twigzzz28@gmail.com
   address: Remote, US
 
@@ -14,10 +14,10 @@ app:
   urls:
     # GitHub Pages site (docs/ on main). CONFIRM the exact base URL after Pages is
     # enabled — the lowercased owner login may differ if the account is renamed.
-    license_url: https://jackelroot404.github.io/solana-seeker-tapclash/copyright.html
-    copyright_url: https://jackelroot404.github.io/solana-seeker-tapclash/copyright.html
-    privacy_policy_url: https://jackelroot404.github.io/solana-seeker-tapclash/privacy.html
-    website: https://jackelroot404.github.io/solana-seeker-tapclash/
+    license_url: https://jackelroot404.github.io/tapclash/copyright.html
+    copyright_url: https://jackelroot404.github.io/tapclash/copyright.html
+    privacy_policy_url: https://jackelroot404.github.io/tapclash/privacy.html
+    website: https://jackelroot404.github.io/tapclash/
   google_store_package: null
 
 release:
