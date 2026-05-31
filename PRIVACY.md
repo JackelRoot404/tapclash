@@ -46,4 +46,4 @@ If this policy changes we'll update the "Last updated" date above and post a not
 
 ## Contact
 
-Questions or data-removal requests: twigzzz28@gmail.com
+Questions or data-removal requests: Jackel_00@protonmail.com
