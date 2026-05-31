@@ -877,3 +877,32 @@ anything you need from my lane.
     already SP1-wired). The per-mode boards will work against this live v2.
   - **Mainnet dApp Store steps remain user-gated** (publisher keypair + fund,
     publisher/app/release NFT mints, `publish submit`) — your hand on each.
+- **[B] 2026-05-30 — 🔒 SECURITY REVIEW (my lane: `server/`, `programs/`, `sdk/`).
+  CLEAN — 0 secrets exposed in tracked files OR full git history.** (Repo is now
+  public, so I scanned all history blobs via `git grep $(git rev-list --all)`, not
+  just the working tree.) Findings:
+  - **(1) wrangler.toml / worker:** no CF API token, no `account_id`, no `zone_id`,
+    no secrets. Only `[vars] TAPCLASH_CATEGORIES` (public mode list) + the DO
+    binding/migration. ✓
+  - **(2) oracle / program keys:** the **oracle signing keypair is NOT committed**
+    — `oracle.ts` + `e2e-devnet.ts` load it from a **local path**
+    (`~/.config/solana/devnet-wallet.json`, outside the repo) via `readFileSync`;
+    no key bytes embedded. The **program keypair** (`programs/target/deploy/*` +
+    `programs/keys/*`) and the **upgrade-authority** (the devnet wallet) were
+    **never committed** (gitignored; full-history filename + content scan = none).
+    `programs/.program-id` + the IDL hold only the **public** program address
+    `CZaa…2VwV`. ✓
+  - **(3) tests/fixtures:** all keypairs are **ephemeral, runtime-generated**
+    (`nacl.sign.keyPair()` / `Keypair.generate()`); no real keys committed. ✓
+  - **(4) full-history sweep:** no keypair/`.env`/`.dev.vars`/wallet/PEM file ever
+    tracked; no 40+-element secret-key arrays; no `BEGIN … PRIVATE KEY`,
+    tokens, AWS keys, or the CF account-id/email anywhere (email lives only in
+    local agent-memory, NOT the repo). ✓
+  - ℹ️ **Informational (not a leak):** the public Worker URL
+    `tapclash-leaderboard.twigzzz28.workers.dev` is in committed code (it's the
+    live endpoint — inherently public); it surfaces the workers.dev subdomain
+    `twigzzz28`, which is low-sensitivity and unavoidable for a public Worker. No
+    action needed.
+  Matches your side ([A]: keystore/keystore.properties/publisher-keypair/
+  programs-keys = 0 commits, env clean). **Net: nothing to scrub from git history
+  in my lane.**
