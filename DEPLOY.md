@@ -1,153 +1,108 @@
-# Deploying TapClash to the Solana Mobile dApp Store
+# Publishing TapClash to the Solana dApp Store
 
-This is the full submission flow, top to bottom. Skip nothing — losing the
-keystore or the publisher keypair means **the dApp Store can never accept an
-update to this app**, so back both up before you start.
+The Solana dApp Store moved to a **web Publishing Portal** flow
+(`https://publish.solanamobile.com`). The old `dapp-store create publisher/app/release`
+NFT-minting CLI is superseded — the portal mints the Publisher + App NFTs for you
+and takes the listing form + APK directly. This doc reflects the current flow
+(verified 2026-05-30 against the v1.x CLI + docs).
 
-## 0. One-time tooling
+> **Two irreplaceable secrets — back both up before you start.**
+> - `android/app/tapclash-release.keystore` (+ the passwords in
+>   `android/keystore.properties`) — the APK signing key. Lose it and you can
+>   never ship an update under `com.tapclash.app`.
+> - The **Solana wallet** you connect to the portal — it owns the Publisher +
+>   App NFTs and is the only key the store accepts as the app's updater.
 
-```bash
-# Solana CLI (for the publisher keypair)
-sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
+## 1. Build the signed release APK (the upload artifact)
 
-# dApp Store CLI (project-local — no global install needed)
-cd ~/dev/solana-seeker-tapclash
-npm install --save-dev @solana-mobile/dapp-store-cli
-```
-
-You don't need EAS for the dApp Store — it accepts a locally-built AAB.
-
-## 1. Build the signed release AAB
-
-This box needs both a JDK and the Android SDK on the path:
+The portal takes an **APK** (not an AAB).
 
 ```bash
 cd ~/dev/solana-seeker-tapclash
-# Point at Android Studio's bundled JDK (skip if Java is already on PATH)
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 export PATH="$JAVA_HOME/bin:$PATH"
-# Gradle reads sdk.dir from android/local.properties; create it once:
-echo "sdk.dir=$HOME/Library/Android/sdk" > android/local.properties
-
-cd android
-./gradlew bundleRelease
-# AAB output: android/app/build/outputs/bundle/release/app-release.aab
+echo "sdk.dir=$HOME/Library/Android/sdk" > android/local.properties   # once
+# Bake in the production leaderboard URL (mainnet cluster is the default):
+export EXPO_PUBLIC_LEADERBOARD_URL=https://tapclash-leaderboard.twigzzz28.workers.dev
+( cd android && ./gradlew assembleRelease )
+# APK: android/app/build/outputs/apk/release/app-release.apk
 ```
 
-Confirm the signature is the **release** key (not debug):
+Confirm it's the **rotated release key** (not debug):
 
 ```bash
-keytool -list -printcert -jarfile app/build/outputs/bundle/release/app-release.aab
-# Look for: Owner: CN=TapClash, …  SHA-256: 22:86:BD:9D:DC:9B:AF:60:…
+APKSIGNER=$(ls ~/Library/Android/sdk/build-tools/*/apksigner | sort -V | tail -1)
+"$APKSIGNER" verify --print-certs android/app/build/outputs/apk/release/app-release.apk | grep "certificate SHA-256"
+# expect: 2286bd9ddc9baf60771c19c32c6a6d6a334e3ddb956d5982b4f86d878f48211b
 ```
 
-Back up `android/app/tapclash-release.keystore` to two offline locations now.
-Store the passwords from `android/keystore.properties` (gitignored, machine-local) separately.
+## 2. Portal account → publisher → app (web, one-time)
 
-## 2. Create the publisher keypair (once per identity)
+At `https://publish.solanamobile.com`:
 
-```bash
-cd ~/dev/solana-seeker-tapclash/publishing
-solana-keygen new --no-bip39-passphrase --outfile publisher-keypair.json
-solana-keygen pubkey publisher-keypair.json   # save this address
-```
+1. **Sign up** and complete **KYC/KYB** verification.
+2. **Connect a Solana wallet** (Phantom / Solflare / Backpack) funded with
+   **~0.2 SOL** (covers NFT mint rent + tx fees). This wallet = the permanent
+   app owner; back it up.
+3. Choose **ArDrive** as the storage provider (hosts the APK + media).
+4. **"Add a dApp" → "New dApp"** and fill the listing form. Source the copy from
+   `publishing/config.yaml` (catalog `en-US`) and upload media from
+   `publishing/media/`:
 
-Fund the address with **~0.1 SOL on mainnet** (publisher + app + first release
-together cost ~0.05 SOL of rent + tx fees). Send from any wallet:
+   | Field | Value / file |
+   |---|---|
+   | App name | TapClash |
+   | Package | com.tapclash.app |
+   | Short description | 30-second tap battles. Climb the monthly Solana season leaderboard. |
+   | Long description | see `config.yaml` `long_description` |
+   | Tagline | Tap fast. Stay accurate. Win the season. |
+   | Website | https://jackelroot404.github.io/tapclash/ |
+   | Privacy policy | https://jackelroot404.github.io/tapclash/privacy.html |
+   | Copyright | https://jackelroot404.github.io/tapclash/copyright.html |
+   | Icon | `publishing/media/icon.png` (512×512) |
+   | Banner | `publishing/media/banner.png` (1920×1080) |
+   | Screenshots | `publishing/media/screenshot_1..4.png` (1080×2403, equal aspect) |
+   | Testing instructions | see `config.yaml` `testing_instructions` |
 
-```bash
-solana transfer <publisher-pubkey> 0.1 --allow-unfunded-recipient
-```
+   Submitting the dApp mints the **Publisher NFT** + **App NFT** (approve the
+   signing requests in your wallet).
 
-Back up `publisher-keypair.json` to two offline locations. This is the only
-key the dApp Store recognizes as the legitimate updater for `com.tapclash.app`.
+## 3. Submit the first version
 
-## 3. Add screenshots and banner
+1. Open the app's **Home** menu in the portal → **"New Version"**.
+2. **Upload** `android/app/build/outputs/apk/release/app-release.apk`.
+3. Set **"What's new"** → `Initial release — four game modes, target variety,
+   and per-mode signed-score leaderboards.`
+4. **Submit** and approve all wallet signing requests.
+5. Review results arrive by email in **3–5 business days**.
 
-Capture on a real Seeker, or a 1080×1920 emulator, and drop in `publishing/media/`:
+## 4. Subsequent updates
 
-| File | Size | What to capture |
-|---|---|---|
-| `icon.png` | 512×512 | App icon (already copied from `assets/icon.png`) |
-| `banner.png` | 1920×1080 | Hero shot for the listing — render the icon + tagline |
-| `screenshot_1.png` | 1080×1920 | Play screen mid-round, several targets visible, high combo |
-| `screenshot_2.png` | 1080×1920 | End-of-round overlay showing final score + submit banner |
-| `screenshot_3.png` | 1080×1920 | Leaderboard with your wallet highlighted |
-| `screenshot_4.png` | 1080×1920 | Season tab showing payout split + countdown |
+1. Bump the version: `app.json` `version` + `android/app/build.gradle`
+   `versionCode`/`versionName`.
+2. Rebuild the APK (step 1).
+3. Portal → app Home → **"New Version"** → upload the new APK → set "What's new"
+   → Submit.
 
-Quick way to capture from a connected Seeker / emulator:
+*(For CI/automation, the portal-backed CLI can upload versions headlessly:
+`npx @solana-mobile/dapp-store-cli --apk-file <apk> --whats-new "…" --keypair <wallet> --api-key-env DAPP_STORE_API_KEY` — needs a portal API key. Not required for manual web submission.)*
 
-```bash
-adb shell screencap -p /sdcard/shot.png && adb pull /sdcard/shot.png screenshot_1.png
-```
+## Backend note
 
-## 4. Create the publisher NFT (once per publisher)
-
-```bash
-cd ~/dev/solana-seeker-tapclash/publishing
-npx dapp-store create publisher -k publisher-keypair.json
-# Mints the Publisher NFT to the publisher key. Writes address into config.yaml.
-git add config.yaml && git commit -m "chore: add publisher address"
-```
-
-## 5. Create the app NFT (once per app)
-
-```bash
-npx dapp-store create app -k publisher-keypair.json
-# Mints the App NFT under the publisher. Writes address into config.yaml.
-git add config.yaml && git commit -m "chore: add app address"
-```
-
-## 6. Create + publish the release
-
-```bash
-# Rebuild AAB if you changed anything since step 1
-( cd ../android && ./gradlew bundleRelease )
-
-npx dapp-store create release -k publisher-keypair.json
-# Mints the Release NFT, uploads media + AAB to Solana storage,
-# writes release address into config.yaml.
-
-npx dapp-store publish submit \
-  -k publisher-keypair.json \
-  --requestor-is-authorized
-# Submits the release to Solana Mobile for review. Usually 1-3 business days.
-```
-
-If validation fails, the CLI prints what's wrong (missing screenshot size,
-bad AAB signature, copy too long, etc.). Fix, rebuild if needed, re-run
-`create release` + `publish submit`.
-
-## 7. Subsequent updates
-
-```bash
-# 1. Bump version
-#    app.json:                "version": "1.0.1"
-#    android/app/build.gradle: versionCode 2, versionName "1.0.1"
-
-# 2. Rebuild
-( cd android && ./gradlew bundleRelease )
-
-# 3. Mint new Release NFT under the same App NFT
-( cd publishing && npx dapp-store create release -k publisher-keypair.json )
-
-# 4. Submit for review (use `update` if a prior release is still under review)
-( cd publishing && npx dapp-store publish submit -k publisher-keypair.json --requestor-is-authorized )
-```
+The app talks to the production leaderboard Worker
+(`https://tapclash-leaderboard.twigzzz28.workers.dev`, v2 — per-mode categories).
+Redeploy the backend with `cd server && npx wrangler deploy` (requires a valid
+`wrangler login`).
 
 ## Reference
 
-- Solana Mobile dApp Publishing docs: https://docs.solanamobile.com/dapp-publishing/intro
-- CLI source: https://github.com/solana-mobile/dapp-publishing
-- Listing requirements: https://docs.solanamobile.com/dapp-publishing/listing_page_requirements
+- dApp Store publishing: https://docs.solanamobile.com/dapp-store/submit-new-app
+- Listing guidelines: https://docs.solanamobile.com/dapp-publishing/listing-page-guidelines
+- Portal: https://publish.solanamobile.com
 
-## Disaster recovery checklist
-
-If you lose the signing keystore: you **cannot** ship updates. You'd have to
-publish a brand-new app under a different package id. Treat both of these as
-critical secrets:
+## Disaster-recovery checklist
 
 - [ ] `android/app/tapclash-release.keystore` — backed up to 2 offline drives
-- [ ] keystore passwords from `android/keystore.properties` — written down
-- [ ] `publishing/publisher-keypair.json` — backed up to 2 offline drives
-- [ ] publisher pubkey funded and recorded in `config.yaml`
+- [ ] keystore passwords (`android/keystore.properties`) — written down offline
+- [ ] portal wallet seed phrase — backed up to 2 offline drives
+- [ ] portal wallet funded (~0.2 SOL) before submitting

@@ -857,3 +857,23 @@ anything you need from my lane.
   classic 202605 back-compat 200, bad_category 400) and post **`SP4: server v2
   live`**. v2 server is built/tested/committed (`8b1d972`, 33/33) + locally E2E'd
   (all 4 checks) — this is purely an auth-plumbing block, not a code issue.
+- **[B] 2026-05-30 — 🟢 SP4: server v2 live.** The user re-auth'd `wrangler` and
+  hand-deployed v2 to the prod Worker (Version `e1bc3462`):
+  `https://tapclash-leaderboard.twigzzz28.workers.dev`. Verified independently by
+  [B] smoke test + [A]:
+  - `/health` → **version:2** ✓
+  - **v1 back-compat (launch-critical):** `/leaderboard/202605` → existing classic
+    board INTACT (`2X3tAZ87…` 12301 pts / 5 rounds) — no fork, no data loss ✓
+  - **unification:** `/leaderboard/202605/classic` returns the SAME board (same
+    bare-`${seasonId}` DO) ✓
+  - v2 category routes (`/leaderboard/:season/frenzy|precision|sudden`) → 200 ✓
+  - allowlist: `/leaderboard/202605/bogus` → 400 `bad_category` ✓
+  - write + replay-safety (throwaway season): v2 POST → 200; same payload as
+    `classic` → **401 `signature_invalid`**; lands in `frenzy` only ✓
+  **Per-mode leaderboards are LIVE on prod.** Frozen contract amended per SP3
+  (v1 + v2 both served; v1 unchanged). Also gitignored `.wrangler/` (commit
+  `f68c0a3`).
+  - **[A] GO:** rebuild the store AAB from `main` against v2 prod (URL unchanged —
+    already SP1-wired). The per-mode boards will work against this live v2.
+  - **Mainnet dApp Store steps remain user-gated** (publisher keypair + fund,
+    publisher/app/release NFT mints, `publish submit`) — your hand on each.
