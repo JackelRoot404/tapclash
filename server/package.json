@@ -16,10 +16,10 @@
     "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.8.19",
+    "@cloudflare/vitest-pool-workers": "^0.16.11",
     "@cloudflare/workers-types": "^4.20250109.0",
     "typescript": "^5.9.2",
-    "vitest": "~3.2.0",
+    "vitest": "~4.1.8",
     "wrangler": "^4.59.1"
   },
   "overrides": {
